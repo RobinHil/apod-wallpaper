@@ -40,6 +40,56 @@ function apodPageUrl(date: string): string {
 
 let currentDate: string | null = null;
 
+// -----------------------------------------------------------------------
+// Blocage de l'interface et affichage des erreurs.
+//
+// Chaque action passe par run() : l'interface entière est masquée par un
+// overlay tant que le backend n'a pas terminé (ou échoué), puis l'état
+// renvoyé par la commande est affiché. Toute erreur apparaît dans un
+// bandeau : rien n'échoue en silence.
+// -----------------------------------------------------------------------
+
+let pending = false;
+
+function setBlocked(blocked: boolean, label?: string): void {
+  el<HTMLSpanElement>("overlay-label").textContent = label ?? "Application en cours...";
+  el<HTMLDivElement>("overlay").hidden = !blocked;
+}
+
+function showError(message: string): void {
+  el<HTMLSpanElement>("error-text").textContent = message;
+  el<HTMLDivElement>("error-banner").hidden = false;
+}
+
+function hideError(): void {
+  el<HTMLDivElement>("error-banner").hidden = true;
+}
+
+async function run(command: string, args?: Record<string, unknown>, label?: string): Promise<void> {
+  if (pending) return;
+  pending = true;
+  setBlocked(true, label);
+  hideError();
+  try {
+    render(await invoke<UiState>(command, args));
+  } catch (error) {
+    showError(String(error));
+    // Resynchronise l'affichage avec l'etat reel du backend apres un echec.
+    try {
+      render(await invoke<UiState>("get_state"));
+    } catch {
+      // Backend injoignable : on garde l'affichage courant et l'erreur visible.
+    }
+  } finally {
+    pending = false;
+    setBlocked(false);
+  }
+}
+
+// -----------------------------------------------------------------------
+// Rendu
+// -----------------------------------------------------------------------
+
 function render(state: UiState): void {
   const pill = el<HTMLSpanElement>("status-pill");
   if (state.offline) {
@@ -63,13 +113,10 @@ function render(state: UiState): void {
     currentDate = state.current.date;
     title.textContent = state.current.title;
     date.textContent = state.current.date;
-    if (state.current.copyright) {
-      copyright.textContent = `© ${state.current.copyright}`;
-      copyright.hidden = false;
-    } else {
-      copyright.textContent = "NASA (domaine public)";
-      copyright.hidden = false;
-    }
+    copyright.textContent = state.current.copyright
+      ? `© ${state.current.copyright}`
+      : "NASA (domaine public)";
+    copyright.hidden = false;
     explanation.textContent = state.current.explanation;
     openPage.hidden = false;
   } else {
@@ -77,7 +124,7 @@ function render(state: UiState): void {
     title.textContent = "Aucune image chargée";
     date.textContent = "-";
     copyright.hidden = true;
-    explanation.textContent = state.status_message ?? "";
+    explanation.textContent = "";
     openPage.hidden = true;
   }
 
@@ -95,49 +142,53 @@ function render(state: UiState): void {
   if (state.status_message) parts.push(state.status_message);
   if (state.last_check) parts.push(`Dernière vérification : ${state.last_check}`);
   el<HTMLSpanElement>("last-check").textContent = parts.join(" — ");
-
-  const refresh = el<HTMLButtonElement>("refresh");
-  refresh.disabled = false;
-  refresh.classList.remove("busy");
 }
 
 async function refreshState(): Promise<void> {
   try {
     render(await invoke<UiState>("get_state"));
-  } catch (e) {
-    console.error("get_state a échoué :", e);
+  } catch (error) {
+    showError(String(error));
   }
 }
 
+// -----------------------------------------------------------------------
+// Cablage
+// -----------------------------------------------------------------------
+
 window.addEventListener("DOMContentLoaded", () => {
   void refreshState();
-  void listen<UiState>("state-updated", (event) => render(event.payload));
+
+  // Mises a jour poussees par le backend (verification quotidienne,
+  // demarrage...) : on ne rafraichit pas pendant une action en cours pour
+  // ne pas perturber le blocage.
+  void listen<UiState>("state-updated", (event) => {
+    if (!pending) render(event.payload);
+  });
 
   el<HTMLButtonElement>("mode-daily").addEventListener("click", () => {
-    void invoke("set_mode", { mode: "daily" });
+    void run("set_mode", { mode: "daily" }, "Passage en mode image du jour...");
   });
   el<HTMLButtonElement>("mode-random").addEventListener("click", () => {
-    void invoke("set_mode", { mode: "random" });
+    void run("set_mode", { mode: "random" }, "Tirage d'une image aléatoire...");
   });
   el<HTMLButtonElement>("fit-blur").addEventListener("click", () => {
-    void invoke("set_fit_mode", { fit: "blur_fill" });
+    void run("set_fit_mode", { fit: "blur_fill" }, "Recomposition du fond d'écran...");
   });
   el<HTMLButtonElement>("fit-crop").addEventListener("click", () => {
-    void invoke("set_fit_mode", { fit: "crop_fill" });
+    void run("set_fit_mode", { fit: "crop_fill" }, "Recomposition du fond d'écran...");
   });
-
-  el<HTMLButtonElement>("refresh").addEventListener("click", (e) => {
-    const btn = e.currentTarget as HTMLButtonElement;
-    btn.disabled = true;
-    btn.classList.add("busy");
-    void invoke("refresh_now");
+  el<HTMLButtonElement>("refresh").addEventListener("click", () => {
+    void run("refresh_now", undefined, "Vérification de la dernière image...");
   });
 
   el<HTMLFormElement>("key-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const key = el<HTMLInputElement>("api-key").value;
-    void invoke("set_api_key", { key });
+    void run("set_api_key", { key }, "Enregistrement de la clé...");
   });
+
+  el<HTMLButtonElement>("error-close").addEventListener("click", hideError);
 
   el<HTMLButtonElement>("open-page").addEventListener("click", () => {
     if (currentDate) void openUrl(apodPageUrl(currentDate));

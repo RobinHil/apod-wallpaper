@@ -82,13 +82,15 @@ impl Cache {
     /// Le fichier compose porte la date et le mode d'ajustement dans son nom :
     /// un chemin different a chaque changement force les bureaux qui mettent
     /// le fond d'ecran en cache par chemin (macOS notamment) a le recharger.
+    /// Le prefixe "wall-" distingue le format actuel (sans texte incruste)
+    /// des anciennes compositions "apod-", qui sont ainsi ignorees.
     pub fn wallpaper_path(&self, date: &str, fit: FitMode) -> PathBuf {
         let suffix = match fit {
             FitMode::BlurFill => "blur",
             FitMode::CropFill => "crop",
         };
         self.wallpapers_dir()
-            .join(format!("apod-{date}-{suffix}.jpg"))
+            .join(format!("wall-{date}-{suffix}.jpg"))
     }
 
     /// Enregistre l'image originale et ses metadonnees, puis purge les plus

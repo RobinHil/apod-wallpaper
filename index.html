@@ -22,6 +22,21 @@
         <span id="status-pill" class="pill">Chargement</span>
       </header>
 
+      <div id="error-banner" class="error-banner" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span id="error-text"></span>
+        <button id="error-close" type="button" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
       <main>
         <section class="card">
           <h1 id="apod-title">Chargement...</h1>
@@ -110,6 +125,15 @@
           </button>
         </footer>
       </main>
+
+      <div id="overlay" class="overlay" hidden>
+        <div class="overlay-box">
+          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-9-9"></path>
+          </svg>
+          <span id="overlay-label">Application en cours...</span>
+        </div>
+      </div>
     </div>
   </body>
 </html>

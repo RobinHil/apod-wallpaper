@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 use tokio::sync::Mutex;
@@ -48,16 +48,13 @@ struct HttpClient(reqwest::Client);
 struct UpdateFlag(AtomicBool);
 
 /// Poignees vers les entrees du menu tray dont le texte change dynamiquement.
+/// Le tray est en lecture seule : il n'affiche que le titre et les credits.
 struct TrayHandles {
     title: MenuItem<Wry>,
     info: MenuItem<Wry>,
-    excerpt: MenuItem<Wry>,
-    status: MenuItem<Wry>,
-    mode_daily: CheckMenuItem<Wry>,
-    mode_random: CheckMenuItem<Wry>,
 }
 
-/// Etat envoye au popup (frontend).
+/// Etat envoye au panneau (frontend).
 #[derive(Clone, Serialize)]
 struct UiState {
     mode: Mode,
@@ -81,6 +78,12 @@ fn ui_state(d: &AppData) -> UiState {
         last_check: d.last_check.clone(),
         current: d.current.clone(),
     }
+}
+
+async fn current_ui(app: &AppHandle) -> UiState {
+    let state = app.state::<SharedState>();
+    let d = state.0.lock().await;
+    ui_state(&d)
 }
 
 fn today_str() -> String {
@@ -131,13 +134,9 @@ fn show_panel(app: &AppHandle) {
     }
 }
 
-/// Pousse l'etat courant vers le popup et vers les textes du menu tray.
+/// Pousse l'etat courant vers le panneau et vers les textes du menu tray.
 async fn refresh_ui(app: &AppHandle) {
-    let ui = {
-        let state = app.state::<SharedState>();
-        let d = state.0.lock().await;
-        ui_state(&d)
-    };
+    let ui = current_ui(app).await;
     let _ = app.emit("state-updated", &ui);
 
     if let Some(tray) = app.try_state::<TrayHandles>() {
@@ -154,46 +153,31 @@ async fn refresh_ui(app: &AppHandle) {
                 None => format!("{} — NASA (domaine public)", c.date),
             })
             .unwrap_or_else(|| "-".to_string());
-        let excerpt = ui
-            .current
-            .as_ref()
-            .map(|c| truncate(&c.explanation, 90))
-            .unwrap_or_else(|| "-".to_string());
-        let status = match (&ui.status_message, ui.offline) {
-            (Some(m), _) => m.clone(),
-            (None, true) => match &ui.current {
-                Some(c) => format!("Hors-ligne — dernière image du {}", c.date),
-                None => "Hors-ligne".to_string(),
-            },
-            (None, false) => match &ui.last_check {
-                Some(t) => format!("À jour (vérifié le {t})"),
-                None => "Démarrage...".to_string(),
-            },
-        };
         let _ = tray.title.set_text(title);
         let _ = tray.info.set_text(info);
-        let _ = tray.excerpt.set_text(excerpt);
-        let _ = tray.status.set_text(truncate(&status, 90));
-        let _ = tray.mode_daily.set_checked(ui.mode == Mode::Daily);
-        let _ = tray.mode_random.set_checked(ui.mode == Mode::Random);
     }
 }
 
-/// Point d'entree de toute mise a jour (demarrage, boucle de fond, bouton
-/// "Rafraîchir maintenant", changement de mode).
-async fn check_and_update(app: AppHandle, force: bool) {
+/// Point d'entree de toute mise a jour (demarrage, boucle de fond, actions du
+/// panneau). Toute erreur est remontee a l'appelant : les commandes du
+/// panneau la transmettent au frontend, la boucle de fond la conserve dans
+/// le statut (elle est deja enregistree dans l'etat au moment de l'echec).
+async fn check_and_update(app: &AppHandle, force: bool) -> Result<(), String> {
     {
         let flag = app.state::<UpdateFlag>();
         if flag.0.swap(true, Ordering::SeqCst) {
-            return;
+            return Err(
+                "Une mise à jour est déjà en cours, réessayez dans un instant.".to_string(),
+            );
         }
     }
-    do_update(&app, force).await;
+    let result = do_update(app, force).await;
     app.state::<UpdateFlag>().0.store(false, Ordering::SeqCst);
-    refresh_ui(&app).await;
+    refresh_ui(app).await;
+    result
 }
 
-async fn do_update(app: &AppHandle, force: bool) {
+async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
     let client = app.state::<HttpClient>().0.clone();
     let state = app.state::<SharedState>().0.clone();
 
@@ -234,7 +218,7 @@ async fn do_update(app: &AppHandle, force: bool) {
                     continue;
                 }
                 // Mode jour : l'APOD est une video, on conserve l'image
-                // precedente et on le signale.
+                // precedente et on le signale (ce n'est pas une erreur).
                 let mut d = state.lock().await;
                 d.offline = false;
                 d.video_skip_date = Some(a.date.clone());
@@ -243,7 +227,7 @@ async fn do_update(app: &AppHandle, force: bool) {
                     a.date
                 ));
                 d.last_check = Some(now_stamp());
-                return;
+                return Ok(());
             }
             Err(ApiError::NotFound) if mode == Mode::Random => {
                 let new_date = pick_random_date();
@@ -259,21 +243,16 @@ async fn do_update(app: &AppHandle, force: bool) {
     }
 
     let Some(apod) = apod else {
-        handle_failure(app, &state, failure, fit).await;
-        return;
+        return Err(handle_failure(app, &state, failure, fit).await);
     };
 
-    // Deja applique et composition presente : rien a faire.
-    let wall_exists = {
-        let d = state.lock().await;
-        d.cache.wallpaper_path(&apod.date, fit).exists()
-    };
-    if !force && current_date.as_deref() == Some(apod.date.as_str()) && wall_exists {
+    // Deja applique et pas de re-verification forcee : rien a faire.
+    if !force && current_date.as_deref() == Some(apod.date.as_str()) {
         let mut d = state.lock().await;
         d.offline = false;
         d.status_message = None;
         d.last_check = Some(now_stamp());
-        return;
+        return Ok(());
     }
 
     // Image originale : depuis le cache si possible, sinon telechargement
@@ -309,21 +288,20 @@ async fn do_update(app: &AppHandle, force: bool) {
                     match d.cache.store(&apod, &source_url, &bytes) {
                         Ok(e) => e,
                         Err(msg) => {
-                            d.status_message = Some(msg);
+                            d.status_message = Some(msg.clone());
                             d.last_check = Some(now_stamp());
-                            return;
+                            return Err(msg);
                         }
                     }
                 }
                 Err(e) => {
-                    handle_failure(app, &state, Some(e), fit).await;
-                    return;
+                    return Err(handle_failure(app, &state, Some(e), fit).await);
                 }
             }
         }
     };
 
-    match apply_entry(app, &state, &entry, fit, force).await {
+    match apply_entry(app, &state, &entry, fit).await {
         Ok(()) => {
             let mut d = state.lock().await;
             d.current = Some(entry);
@@ -331,22 +309,25 @@ async fn do_update(app: &AppHandle, force: bool) {
             d.video_skip_date = None;
             d.status_message = None;
             d.last_check = Some(now_stamp());
+            Ok(())
         }
         Err(msg) => {
             let mut d = state.lock().await;
-            d.status_message = Some(msg);
+            d.status_message = Some(msg.clone());
             d.last_check = Some(now_stamp());
+            Err(msg)
         }
     }
 }
 
-/// Compose (si necessaire) puis applique une entree du cache en fond d'ecran.
+/// Compose puis applique une entree du cache en fond d'ecran. La composition
+/// n'est recalculee que si le fichier pour cette date et cet ajustement est
+/// absent ; sinon le JPEG existant est reapplique tel quel.
 async fn apply_entry(
     app: &AppHandle,
     state: &Arc<Mutex<AppData>>,
     entry: &CacheEntry,
     fit: FitMode,
-    force_compose: bool,
 ) -> Result<(), String> {
     let (image_path, wall_path) = {
         let d = state.lock().await;
@@ -356,16 +337,13 @@ async fn apply_entry(
         )
     };
 
-    if force_compose || !wall_path.exists() {
+    if !wall_path.exists() {
         let (w, h) = screen_size(app);
-        let date = entry.date.clone();
-        let copyright = entry.copyright.clone();
         let wall = wall_path.clone();
         tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
             let img = image::open(&image_path)
                 .map_err(|e| format!("Lecture de l'image en cache impossible : {e}"))?;
-            let composed =
-                image_compose::compose_wallpaper(&img, w, h, fit, &date, copyright.as_deref());
+            let composed = image_compose::compose_wallpaper(&img, w, h, fit);
             image_compose::save_jpeg(&composed, &wall)
         })
         .await
@@ -375,14 +353,15 @@ async fn apply_entry(
     wallpaper::set_wallpaper(&wall_path)
 }
 
-/// Echec de l'API : passage en mode hors-ligne si pertinent, et repli sur le
-/// cache local si aucune image n'est encore appliquee.
+/// Echec de l'API : passage en mode hors-ligne si pertinent, repli sur le
+/// cache local si aucune image n'est encore appliquee, et retour du message
+/// destine a l'utilisateur.
 async fn handle_failure(
     app: &AppHandle,
     state: &Arc<Mutex<AppData>>,
     err: Option<ApiError>,
     fit: FitMode,
-) {
+) -> String {
     let (message, offline) = match err {
         Some(e) => (e.to_string(), e.is_offline()),
         None => (
@@ -403,25 +382,41 @@ async fn handle_failure(
         }
     };
     if let Some(entry) = fallback {
-        if apply_entry(app, state, &entry, fit, false).await.is_ok() {
+        if apply_entry(app, state, &entry, fit).await.is_ok() {
             state.lock().await.current = Some(entry);
         }
     }
 
     let mut d = state.lock().await;
     d.offline = offline;
-    d.status_message = Some(if offline {
+    let user_message = if offline {
         match &d.current {
-            Some(c) => format!("Hors-ligne — dernière image du {}", c.date),
+            Some(c) => format!("Hors-ligne — dernière image du {} conservée. {message}", c.date),
             None => format!("Hors-ligne — {message}"),
         }
     } else {
         message
-    });
+    };
+    d.status_message = Some(user_message.clone());
     d.last_check = Some(now_stamp());
+    user_message
 }
 
-async fn change_mode(app: AppHandle, mode: Mode) -> Result<(), String> {
+// ---------------------------------------------------------------------------
+// Commandes exposees au panneau. Chaque commande attend la fin complete de
+// l'operation avant de repondre : le frontend bloque son interface pendant
+// ce temps et affiche l'erreur eventuelle. Aucun travail n'est lance en
+// arriere-plan sans que son resultat soit remonte.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn get_state(state: tauri::State<'_, SharedState>) -> Result<UiState, String> {
+    let d = state.0.lock().await;
+    Ok(ui_state(&d))
+}
+
+#[tauri::command]
+async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
     let changed = {
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
@@ -437,79 +432,49 @@ async fn change_mode(app: AppHandle, mode: Mode) -> Result<(), String> {
         changed
     };
     if changed {
-        check_and_update(app, true).await;
-    } else {
-        // Re-synchronise les coches du menu (un clic les bascule visuellement).
-        refresh_ui(&app).await;
+        check_and_update(&app, true).await?;
     }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Commandes exposees au popup
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-async fn get_state(state: tauri::State<'_, SharedState>) -> Result<UiState, String> {
-    let d = state.0.lock().await;
-    Ok(ui_state(&d))
+    Ok(current_ui(&app).await)
 }
 
 #[tauri::command]
-async fn set_mode(app: AppHandle, mode: Mode) -> Result<(), String> {
-    tauri::async_runtime::spawn(async move {
-        let _ = change_mode(app, mode).await;
-    });
-    Ok(())
-}
-
-#[tauri::command]
-async fn set_api_key(app: AppHandle, key: String) -> Result<(), String> {
-    let need_retry = {
-        let state = app.state::<SharedState>();
-        let mut d = state.0.lock().await;
-        d.settings.api_key = key.trim().to_string();
-        let path = d.settings_path.clone();
-        d.settings.save(&path)?;
-        // Une nouvelle cle peut debloquer un quota depasse.
-        d.offline || d.current.is_none()
-    };
-    refresh_ui(&app).await;
-    if need_retry {
-        tauri::async_runtime::spawn(check_and_update(app, false));
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn set_fit_mode(app: AppHandle, fit: FitMode) -> Result<(), String> {
-    let current = {
+async fn set_fit_mode(app: AppHandle, fit: FitMode) -> Result<UiState, String> {
+    let entry = {
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
         if d.settings.fit_mode == fit {
-            return Ok(());
+            return Ok(ui_state(&d));
         }
         d.settings.fit_mode = fit;
         let path = d.settings_path.clone();
         d.settings.save(&path)?;
         d.current.clone()
     };
-    if let Some(entry) = current {
+    if let Some(entry) = entry {
         let state = app.state::<SharedState>().0.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(msg) = apply_entry(&app, &state, &entry, fit, false).await {
-                state.lock().await.status_message = Some(msg);
-            }
-            refresh_ui(&app).await;
-        });
+        apply_entry(&app, &state, &entry, fit).await?;
     }
-    Ok(())
+    refresh_ui(&app).await;
+    Ok(current_ui(&app).await)
 }
 
 #[tauri::command]
-async fn refresh_now(app: AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn(check_and_update(app, true));
-    Ok(())
+async fn set_api_key(app: AppHandle, key: String) -> Result<UiState, String> {
+    {
+        let state = app.state::<SharedState>();
+        let mut d = state.0.lock().await;
+        d.settings.api_key = key.trim().to_string();
+        let path = d.settings_path.clone();
+        d.settings.save(&path)?;
+    }
+    refresh_ui(&app).await;
+    Ok(current_ui(&app).await)
+}
+
+#[tauri::command]
+async fn refresh_now(app: AppHandle) -> Result<UiState, String> {
+    check_and_update(&app, true).await?;
+    Ok(current_ui(&app).await)
 }
 
 #[tauri::command]
@@ -518,32 +483,14 @@ fn quit_app(app: AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Tray
+// Tray : lecture seule. Informations sur l'image courante, ouverture du
+// panneau, sortie. Tous les reglages se font dans le panneau.
 // ---------------------------------------------------------------------------
 
-fn build_tray(app: &tauri::App, initial_mode: Mode) -> tauri::Result<()> {
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let title = MenuItem::with_id(app, "title", "Chargement...", false, None::<&str>)?;
     let info = MenuItem::with_id(app, "info", "-", false, None::<&str>)?;
-    let excerpt = MenuItem::with_id(app, "excerpt", "-", false, None::<&str>)?;
-    let status = MenuItem::with_id(app, "status", "Démarrage...", false, None::<&str>)?;
-    let mode_daily = CheckMenuItem::with_id(
-        app,
-        "mode_daily",
-        "Mode image du jour",
-        true,
-        initial_mode == Mode::Daily,
-        None::<&str>,
-    )?;
-    let mode_random = CheckMenuItem::with_id(
-        app,
-        "mode_random",
-        "Mode aléatoire",
-        true,
-        initial_mode == Mode::Random,
-        None::<&str>,
-    )?;
-    let refresh = MenuItem::with_id(app, "refresh", "Rafraîchir maintenant", true, None::<&str>)?;
-    let panel = MenuItem::with_id(app, "panel", "Détails et réglages...", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Ouvrir APOD Wallpaper", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -551,28 +498,14 @@ fn build_tray(app: &tauri::App, initial_mode: Mode) -> tauri::Result<()> {
         &[
             &title,
             &info,
-            &excerpt,
             &PredefinedMenuItem::separator(app)?,
-            &mode_daily,
-            &mode_random,
-            &PredefinedMenuItem::separator(app)?,
-            &refresh,
-            &panel,
-            &PredefinedMenuItem::separator(app)?,
-            &status,
+            &open,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
     )?;
 
-    app.manage(TrayHandles {
-        title,
-        info,
-        excerpt,
-        status,
-        mode_daily,
-        mode_random,
-    });
+    app.manage(TrayHandles { title, info });
 
     TrayIconBuilder::with_id("apod-tray")
         .icon(
@@ -584,23 +517,7 @@ fn build_tray(app: &tauri::App, initial_mode: Mode) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "mode_daily" => {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = change_mode(app, Mode::Daily).await;
-                });
-            }
-            "mode_random" => {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = change_mode(app, Mode::Random).await;
-                });
-            }
-            "refresh" => {
-                let app = app.clone();
-                tauri::async_runtime::spawn(check_and_update(app, true));
-            }
-            "panel" => show_panel(app),
+            "open" => show_panel(app),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -647,7 +564,6 @@ pub fn run() {
             let cache = Cache::load(data_dir.join("cache"));
             cache.ensure_dirs().map_err(std::io::Error::other)?;
 
-            let initial_mode = settings.mode;
             let random_date = if settings.mode == Mode::Random {
                 Some(pick_random_date())
             } else {
@@ -674,13 +590,14 @@ pub fn run() {
                 last_check: None,
             }))));
 
-            build_tray(app, initial_mode)?;
+            build_tray(app)?;
 
             // Verification au demarrage puis boucle de fond : nouvelle image
             // quotidienne et reprises silencieuses apres une coupure reseau.
+            // Les echecs sont deja consignes dans le statut (tray + panneau).
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                check_and_update(handle.clone(), false).await;
+                let _ = check_and_update(&handle, false).await;
 
                 let mut interval = tokio::time::interval(CHECK_INTERVAL);
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -707,7 +624,7 @@ pub fn run() {
                             || (d.settings.mode == Mode::Daily && stale && !video_blocked)
                     };
                     if need {
-                        check_and_update(handle.clone(), false).await;
+                        let _ = check_and_update(&handle, false).await;
                     }
                 }
             });

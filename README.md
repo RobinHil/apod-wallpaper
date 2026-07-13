@@ -15,14 +15,18 @@ TypeScript/HTML/CSS vanilla. Pas de framework JS, pas de dependance superflue.
   16 juin 1995) a chaque demarrage de l'application.
 - **Verification automatique** : au demarrage, puis en continu tant que l'application
   tourne (nouvelle image quotidienne detectee automatiquement).
-- **Rafraichissement manuel** depuis le menu du tray ou le panneau de reglages.
+- **Tray en lecture seule** : le menu de la barre d'etat affiche le titre de
+  l'image, sa date et son copyright, et permet d'ouvrir le panneau ou de quitter.
+  Tous les reglages et le rafraichissement manuel se font dans le panneau.
+- **Interface fiable** : chaque action du panneau bloque l'interface (indicateur
+  visible) jusqu'a son application complete, et toute erreur s'affiche dans un
+  bandeau — aucune operation n'echoue en silence.
 - **Adaptation intelligente au ratio de l'ecran** (mode par defaut "fond flou") :
   l'image originale est centree entiere et sans deformation par-dessus une version
   d'elle-meme agrandie, floutee et assombrie qui remplit l'ecran. Un mode
-  "recadrer pour remplir" (sans flou) est disponible dans les reglages.
-- **Incrustation des credits** : la date et le copyright (quand il existe) sont
-  incrustes en bas a droite de l'image, en blanc sur un cartouche sombre
-  semi-transparent, lisible sur toute image.
+  "recadrer pour remplir" (sans flou) est disponible dans les reglages. Aucun
+  texte n'est incruste sur l'image : les credits (date, copyright) restent
+  visibles dans le tray et le panneau.
 - **Cache local** : historique des dernieres images telechargees (60 max) avec leurs
   metadonnees dans `metadata.json`.
 - **Mode hors-ligne** : en cas de coupure reseau ou de quota API depasse, la derniere
@@ -76,10 +80,10 @@ Au premier lancement, l'application :
 1. interroge l'API APOD (avec `DEMO_KEY` si aucune cle n'est configuree) ;
 2. telecharge l'image (HD si disponible) et l'enregistre dans le cache ;
 3. compose l'image finale a la resolution de l'ecran principal (fond flou +
-   image centree + incrustation date/copyright) ;
+   image centree, sans texte incruste) ;
 4. la definit comme fond d'ecran ;
 5. s'installe dans la barre d'etat. La fenetre de reglages est cachee par defaut :
-   elle s'ouvre via le menu du tray ("Details et reglages...").
+   elle s'ouvre via le menu du tray ("Ouvrir APOD Wallpaper").
 
 ## Build de production
 
@@ -104,7 +108,7 @@ Par defaut l'application utilise `DEMO_KEY`, limitee a **30 requetes/heure et
 cle personnelle gratuite est recommandee :
 
 1. Demandez une cle sur <https://api.nasa.gov/> (formulaire simple, cle recue par email).
-2. Ouvrez le panneau de l'application (menu tray, entree "Details et reglages...").
+2. Ouvrez le panneau de l'application (menu tray, entree "Ouvrir APOD Wallpaper").
 3. Collez la cle dans le champ "Cle API NASA" et cliquez sur "Enregistrer".
 
 La cle est stockee localement dans `settings.json` (voir "Donnees locales" ci-dessous)
@@ -120,12 +124,11 @@ apod-wallpaper/
 |  |  |- lib.rs                # Setup Tauri : tray, menu, scheduler, commandes
 |  |  |- nasa_api.rs           # Appel API APOD, parsing, typologie d'erreurs
 |  |  |- cache.rs              # Historique local (metadata.json + fichiers images)
-|  |  |- image_compose.rs      # Fond flou/recadrage + incrustation date/copyright
+|  |  |- image_compose.rs      # Adaptation ratio : fond flou ou recadrage
 |  |  |- wallpaper.rs          # Definition du fond d'ecran par plateforme
 |  |  `- settings.rs           # Cle API, mode, ajustement ; persistance JSON
-|  |- assets/
-|  |  |- DejaVuSans.ttf        # Police embarquee pour l'incrustation
-|  |  `- DejaVuSans-LICENSE.txt
+|  |- icons/
+|  |  `- app-icon.svg          # Source vectorielle de l'icone (regenerer via `tauri icon`)
 |  |- capabilities/default.json
 |  `- tauri.conf.json
 |- src/                        # Frontend du popup (vanilla TypeScript)
@@ -151,7 +154,7 @@ settings.json                  # cle API, mode (jour/aleatoire), ajustement
 cache/
 |- metadata.json               # historique des images et de leurs metadonnees
 |- images/<date>.<ext>         # images originales telechargees
-`- wallpapers/apod-<date>-<fit>.jpg   # compositions finales appliquees
+`- wallpapers/wall-<date>-<fit>.jpg   # compositions finales appliquees
 ```
 
 ## Choix techniques notables
@@ -170,8 +173,13 @@ cache/
 - **Nom de fichier variable** : la composition finale inclut la date et le mode
   d'ajustement dans son nom de fichier, car certains bureaux (macOS notamment)
   mettent le fond d'ecran en cache par chemin et ignorent un fichier reecrit en place.
-- **Droits d'auteur** : le champ `copyright` de l'API est conserve dans le cache,
-  incruste sur l'image et affiche dans l'interface. Quand il est present, l'image
+- **Erreurs jamais silencieuses** : les commandes du panneau (changement de mode,
+  rafraichissement, ajustement, cle API) attendent la fin complete de l'operation
+  cote Rust et renvoient l'erreur eventuelle au frontend, qui bloque l'interface
+  pendant l'attente et affiche l'erreur dans un bandeau. La boucle de fond consigne
+  ses echecs dans le statut visible du panneau.
+- **Droits d'auteur** : le champ `copyright` de l'API est conserve dans le cache
+  et affiche dans le tray et le panneau. Quand il est present, l'image
   n'est **pas** dans le domaine public : elle appartient a son auteur et l'usage
   est limite au fond d'ecran personnel. Les images sans copyright sont produites
   par la NASA et relevent du domaine public.
@@ -196,6 +204,4 @@ cache/
 ## Licences
 
 - Code du projet : a definir par l'auteur du depot.
-- Police DejaVu Sans embarquee : licence libre Bitstream Vera / DejaVu
-  (voir `src-tauri/assets/DejaVuSans-LICENSE.txt`).
 - Les images APOD avec mention de copyright restent la propriete de leurs auteurs.

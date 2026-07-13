@@ -42,6 +42,14 @@
   box-sizing: border-box;
 }
 
+/* L'attribut HTML `hidden` doit toujours gagner, y compris sur les elements
+   auxquels une regle donne un display explicite (overlay en flex, bandeau
+   d'erreur...). Sans ceci, l'overlay de blocage resterait affiche en
+   permanence. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   user-select: none;
   cursor: default;
@@ -293,4 +301,67 @@ footer .hint {
 
 .quit-btn:hover:not(:disabled) {
   color: #c4423f;
+}
+
+.error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #c4423f;
+  border-radius: 8px;
+  background: rgba(196, 66, 63, 0.08);
+  color: #c4423f;
+  font-size: 12px;
+}
+
+.error-banner svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.error-banner span {
+  flex: 1;
+  user-select: text;
+}
+
+.error-banner button {
+  border: none;
+  background: none;
+  color: inherit;
+  padding: 0;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.overlay-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.overlay-box .spinner {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  animation: spin 1s linear infinite;
 }

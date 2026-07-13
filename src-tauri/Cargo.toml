@@ -25,8 +25,6 @@ serde_json = "1"
 reqwest = { version = "0.13.4", features = ["json", "query"] }
 tokio = { version = "1.52.3", features = ["time", "macros", "rt-multi-thread"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
-imageproc = { version = "0.27.0", default-features = false, features = ["text"] }
-ab_glyph = "0.2.32"
 rand = "0.10.2"
 chrono = { version = "0.4.45", features = ["serde"] }
 wallpaper = "3.2.0"
