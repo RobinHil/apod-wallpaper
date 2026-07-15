@@ -12,7 +12,10 @@ TypeScript/HTML/CSS vanilla. Pas de framework JS, pas de dependance superflue.
 
 - **Image du jour** : recupere l'APOD courante via l'API NASA et l'applique en fond d'ecran.
 - **Mode aleatoire** : tire une date au sort dans tout l'historique APOD (depuis le
-  16 juin 1995) a chaque demarrage de l'application.
+  16 juin 1995) a chaque demarrage de l'application ; le bouton "Rafraichir
+  maintenant" tire une nouvelle image immediatement.
+- **Mode date precise** : affiche l'APOD d'une date choisie via un selecteur,
+  borne entre le 16 juin 1995 (premiere APOD) et aujourd'hui.
 - **Verification automatique** : au demarrage, puis en continu tant que l'application
   tourne (nouvelle image quotidienne detectee automatiquement).
 - **Tray en lecture seule** : le menu de la barre d'etat affiche le titre de
@@ -150,7 +153,7 @@ L'application ecrit dans le dossier de donnees standard de l'OS
 Contenu :
 
 ```
-settings.json                  # cle API, mode (jour/aleatoire), ajustement
+settings.json                  # cle API, mode (jour/aleatoire/date precise), date choisie, ajustement
 cache/
 |- metadata.json               # historique des images et de leurs metadonnees
 |- images/<date>.<ext>         # images originales telechargees
@@ -159,14 +162,28 @@ cache/
 
 ## Choix techniques notables
 
-- **APOD de type video** : certaines publications APOD sont des videos (YouTube ou
-  Vimeo). Les vignettes fournies par l'API sont de trop basse resolution pour un
-  fond d'ecran, donc l'application ne les utilise pas. En mode "image du jour",
-  l'image precedente est conservee et le menu du tray le signale ; en mode
-  aleatoire, une nouvelle date est tiree au sort automatiquement.
+- **APOD de type video** : certaines publications APOD sont des videos. L'API ne
+  fournit aucun fichier video (seulement un lien d'integration YouTube/Vimeo), un
+  fond d'ecran anime n'est donc pas envisageable sans dependances lourdes
+  (telechargement du flux, lecteur permanent derriere le bureau, consommation
+  CPU/batterie continue). A la place, la **vignette** de la video est utilisee
+  comme fond d'ecran : pour YouTube, la version en resolution maximale
+  (`maxresdefault`, souvent 1280x720) est tentee d'abord, avec repli sur la
+  vignette standard. Le panneau signale qu'il s'agit d'une video et propose un
+  lien direct pour la regarder ; le tray ajoute "(vidéo)" au titre. Si aucune
+  vignette n'est disponible, l'image precedente est conservee (mode jour) ou une
+  nouvelle date est tiree au sort (mode aleatoire).
 - **Mode jour sans parametre de date** : l'application demande a l'API "la derniere
   image publiee" plutot que la date locale, ce qui elimine les decalages de fuseau
-  horaire (l'APOD est publiee sur le fuseau de la cote Est americaine).
+  horaire (l'APOD est publiee sur le fuseau de la cote Est americaine) et gere
+  automatiquement les jours sans publication : la veille (ou la derniere date
+  publiee) est affichee, avec un message d'information dans le panneau tant que
+  l'APOD du jour n'est pas disponible.
+- **Jours sans publication** : l'historique APOD comporte quelques dates sans
+  entree (notamment en 1995). Selon le mode : "image du jour" affiche la derniere
+  publication avec un indicateur ; "aleatoire" retire silencieusement une autre
+  date ; "date precise" refuse la date avec un message d'erreur, conserve le fond
+  d'ecran en place et restaure le mode precedent.
 - **Flou gaussien economique** : le fond est floute sur une version reduite (1/8) de
   l'image puis re-agrandi ; le rendu est equivalent a un flou prononce sur l'image
   pleine taille pour une fraction du cout CPU.

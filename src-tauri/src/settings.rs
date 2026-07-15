@@ -11,8 +11,11 @@ pub const DEMO_KEY: &str = "DEMO_KEY";
 pub enum Mode {
     /// Image APOD du jour courant.
     Daily,
-    /// Date aleatoire dans l'historique APOD, tiree a chaque demarrage.
+    /// Date aleatoire dans l'historique APOD, tiree a chaque demarrage
+    /// (et a chaque rafraichissement manuel).
     Random,
+    /// Date fixe choisie par l'utilisateur (champ `specific_date`).
+    Specific,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +34,9 @@ pub struct Settings {
     pub api_key: String,
     pub mode: Mode,
     pub fit_mode: FitMode,
+    /// Date choisie pour le mode `Specific`, au format AAAA-MM-JJ.
+    /// Chaine vide tant que l'utilisateur n'a jamais choisi de date.
+    pub specific_date: String,
 }
 
 impl Default for Settings {
@@ -39,6 +45,7 @@ impl Default for Settings {
             api_key: String::new(),
             mode: Mode::Daily,
             fit_mode: FitMode::BlurFill,
+            specific_date: String::new(),
         }
     }
 }

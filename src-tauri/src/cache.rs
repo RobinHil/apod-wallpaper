@@ -17,10 +17,21 @@ pub struct CacheEntry {
     pub explanation: String,
     #[serde(default)]
     pub copyright: Option<String>,
+    /// "image" ou "video" ; pour une video, le fichier stocke est la vignette.
+    #[serde(default = "default_media_type")]
+    pub media_type: String,
+    /// Lien de la video (YouTube/Vimeo) quand media_type == "video", pour
+    /// que le panneau puisse l'ouvrir directement.
+    #[serde(default)]
+    pub video_url: Option<String>,
     pub source_url: String,
     /// Nom du fichier image original dans `images/`.
     pub image_file: String,
     pub fetched_at: String,
+}
+
+fn default_media_type() -> String {
+    "image".to_string()
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -119,6 +130,12 @@ impl Cache {
             title: apod.title.clone(),
             explanation: apod.explanation.clone(),
             copyright: apod.copyright.clone(),
+            media_type: apod.media_type.clone(),
+            video_url: if apod.is_video() {
+                apod.url.clone()
+            } else {
+                None
+            },
             source_url: source_url.to_string(),
             image_file: file_name,
             fetched_at: chrono::Local::now().to_rfc3339(),

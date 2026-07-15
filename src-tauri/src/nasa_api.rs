@@ -24,19 +24,53 @@ pub struct Apod {
 }
 
 impl Apod {
-    pub fn is_image(&self) -> bool {
-        self.media_type == "image" && self.best_image_url().is_some()
+    pub fn is_video(&self) -> bool {
+        self.media_type == "video"
     }
 
-    /// URL a telecharger : haute definition si disponible, sinon standard.
-    pub fn best_image_url(&self) -> Option<&str> {
-        self.hdurl.as_deref().or(self.url.as_deref())
+    /// Vrai si une image exploitable en fond d'ecran existe : l'image
+    /// elle-meme, ou la vignette pour une video. L'API ne fournit pas de
+    /// fichier video (seulement un lien d'integration YouTube/Vimeo), donc
+    /// la vignette est la seule representation possible d'une video.
+    pub fn has_image(&self) -> bool {
+        match self.media_type.as_str() {
+            "image" => self.hdurl.is_some() || self.url.is_some(),
+            "video" => self.thumbnail_url.is_some(),
+            _ => false,
+        }
     }
 
-    /// URL de repli si le telechargement HD echoue.
-    pub fn fallback_image_url(&self) -> Option<&str> {
-        match (self.hdurl.as_deref(), self.url.as_deref()) {
-            (Some(_), Some(u)) => Some(u),
+    /// URL a telecharger en priorite : haute definition pour une image,
+    /// vignette en resolution maximale pour une video YouTube.
+    pub fn preferred_download_url(&self) -> Option<String> {
+        match self.media_type.as_str() {
+            "image" => self
+                .hdurl
+                .as_deref()
+                .or(self.url.as_deref())
+                .map(str::to_string),
+            "video" => {
+                let thumb = self.thumbnail_url.as_deref()?;
+                Some(youtube_maxres(thumb).unwrap_or_else(|| thumb.to_string()))
+            }
+            _ => None,
+        }
+    }
+
+    /// URL de repli si le premier telechargement echoue : URL standard pour
+    /// une image, vignette d'origine pour une video (la version maxres
+    /// n'existe pas pour les videos anciennes ou basse definition).
+    pub fn fallback_download_url(&self) -> Option<String> {
+        match self.media_type.as_str() {
+            "image" => match (self.hdurl.as_deref(), self.url.as_deref()) {
+                (Some(_), Some(u)) => Some(u.to_string()),
+                _ => None,
+            },
+            "video" => {
+                let thumb = self.thumbnail_url.as_deref()?;
+                // Un repli n'a de sens que si on a tente la version maxres.
+                youtube_maxres(thumb).map(|_| thumb.to_string())
+            }
             _ => None,
         }
     }
@@ -51,6 +85,54 @@ impl Apod {
             }
         }
         self
+    }
+}
+
+/// Pour une vignette YouTube standard (0.jpg, hqdefault.jpg...), construit
+/// l'URL de la vignette en resolution maximale (maxresdefault.jpg, souvent
+/// 1280x720 ; verifie disponible pour les videos NASA recentes). Renvoie
+/// None si l'URL n'est pas une vignette YouTube connue : l'appelant garde
+/// alors l'URL d'origine.
+fn youtube_maxres(url: &str) -> Option<String> {
+    if !url.contains("img.youtube.com") && !url.contains("ytimg.com") {
+        return None;
+    }
+    let (head, tail) = url.rsplit_once('/')?;
+    let name = tail.strip_suffix(".jpg")?;
+    const VARIANTS: [&str; 8] = [
+        "0", "1", "2", "3", "default", "mqdefault", "hqdefault", "sddefault",
+    ];
+    if VARIANTS.contains(&name) {
+        Some(format!("{head}/maxresdefault.jpg"))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::youtube_maxres;
+
+    #[test]
+    fn upgrade_standard_youtube_thumbnails() {
+        assert_eq!(
+            youtube_maxres("https://img.youtube.com/vi/abc123/0.jpg").as_deref(),
+            Some("https://img.youtube.com/vi/abc123/maxresdefault.jpg")
+        );
+        assert_eq!(
+            youtube_maxres("https://i.ytimg.com/vi/abc123/hqdefault.jpg").as_deref(),
+            Some("https://i.ytimg.com/vi/abc123/maxresdefault.jpg")
+        );
+    }
+
+    #[test]
+    fn leave_other_urls_untouched() {
+        assert_eq!(youtube_maxres("https://vimeo.com/thumb/42.jpg"), None);
+        assert_eq!(
+            youtube_maxres("https://img.youtube.com/vi/abc123/maxresdefault.jpg"),
+            None
+        );
+        assert_eq!(youtube_maxres("https://img.youtube.com/vi/abc123/0.png"), None);
     }
 }
 
@@ -87,7 +169,10 @@ impl fmt::Display for ApiError {
                 f,
                 "Quota de la clé API dépassé (DEMO_KEY : 30 requêtes/heure). Réessai automatique plus tard."
             ),
-            ApiError::NotFound => write!(f, "Aucune image APOD pour cette date."),
+            ApiError::NotFound => write!(
+                f,
+                "Aucune APOD n'a été publiée à cette date (l'historique comporte quelques jours sans publication)."
+            ),
             ApiError::Http(code) => write!(f, "Erreur HTTP {code} de l'API NASA."),
             ApiError::Parse(e) => write!(f, "Réponse de l'API illisible : {e}"),
         }
@@ -102,7 +187,11 @@ pub async fn fetch_apod(
     api_key: &str,
     date: Option<NaiveDate>,
 ) -> Result<Apod, ApiError> {
-    let mut request = client.get(ENDPOINT).query(&[("api_key", api_key)]);
+    // thumbs=true : l'API joint la vignette des videos, seule representation
+    // exploitable en fond d'ecran (aucun fichier video n'est fourni).
+    let mut request = client
+        .get(ENDPOINT)
+        .query(&[("api_key", api_key), ("thumbs", "true")]);
     if let Some(d) = date {
         request = request.query(&[("date", d.format("%Y-%m-%d").to_string())]);
     }

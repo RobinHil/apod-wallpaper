@@ -61,6 +61,7 @@ struct UiState {
     fit_mode: FitMode,
     api_key: String,
     using_demo_key: bool,
+    specific_date: String,
     offline: bool,
     status_message: Option<String>,
     last_check: Option<String>,
@@ -73,6 +74,7 @@ fn ui_state(d: &AppData) -> UiState {
         fit_mode: d.settings.fit_mode,
         api_key: d.settings.api_key.clone(),
         using_demo_key: d.settings.api_key.trim().is_empty(),
+        specific_date: d.settings.specific_date.clone(),
         offline: d.offline,
         status_message: d.status_message.clone(),
         last_check: d.last_check.clone(),
@@ -90,6 +92,27 @@ fn today_str() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
+/// Messages d'information (non bloquants) accompagnant une image appliquee :
+/// APOD du jour pas encore publiee, vignette de video...
+fn status_notes(mode: Mode, date: &str, media_type: &str) -> Option<String> {
+    let mut notes: Vec<String> = Vec::new();
+    if mode == Mode::Daily && date < today_str().as_str() {
+        notes.push(format!(
+            "L'APOD du jour n'est pas encore publiée — affichage de la plus récente ({date})."
+        ));
+    }
+    if media_type == "video" {
+        notes.push(format!(
+            "L'APOD du {date} est une vidéo : sa vignette est utilisée en fond d'écran."
+        ));
+    }
+    if notes.is_empty() {
+        None
+    } else {
+        Some(notes.join(" "))
+    }
+}
+
 fn now_stamp() -> String {
     Local::now().format("%d/%m %H:%M").to_string()
 }
@@ -103,16 +126,39 @@ fn truncate(s: &str, max: usize) -> String {
     out
 }
 
+fn apod_start_date() -> NaiveDate {
+    NaiveDate::from_ymd_opt(APOD_START.0, APOD_START.1, APOD_START.2)
+        .expect("date de depart APOD invalide")
+}
+
 fn pick_random_date() -> NaiveDate {
     use rand::RngExt;
-    let start = NaiveDate::from_ymd_opt(APOD_START.0, APOD_START.1, APOD_START.2)
-        .expect("date de depart APOD invalide");
+    let start = apod_start_date();
     let today = Local::now().date_naive();
     let span = (today - start).num_days().max(0);
     let offset = rand::rng().random_range(0..=span);
     start
         .checked_add_days(Days::new(offset as u64))
         .unwrap_or(today)
+}
+
+/// Analyse et borne une date choisie par l'utilisateur : entre la premiere
+/// APOD (16 juin 1995) et aujourd'hui.
+fn validate_apod_date(raw: &str) -> Result<NaiveDate, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("Choisissez d'abord une date.".to_string());
+    }
+    let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .map_err(|_| format!("Date invalide : « {raw} » (format attendu : AAAA-MM-JJ)."))?;
+    let start = apod_start_date();
+    if date < start {
+        return Err("La première APOD date du 16 juin 1995 : choisissez une date à partir de ce jour.".to_string());
+    }
+    if date > Local::now().date_naive() {
+        return Err("Cette date est dans le futur : choisissez une date passée ou aujourd'hui.".to_string());
+    }
+    Ok(date)
 }
 
 /// Resolution physique de l'ecran principal ; les autres ecrans recoivent la
@@ -143,7 +189,14 @@ async fn refresh_ui(app: &AppHandle) {
         let title = ui
             .current
             .as_ref()
-            .map(|c| truncate(&c.title, 60))
+            .map(|c| {
+                let t = truncate(&c.title, 60);
+                if c.media_type == "video" {
+                    format!("{t} (vidéo)")
+                } else {
+                    t
+                }
+            })
             .unwrap_or_else(|| "Aucune image chargée".to_string());
         let info = ui
             .current
@@ -181,7 +234,7 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
     let client = app.state::<HttpClient>().0.clone();
     let state = app.state::<SharedState>().0.clone();
 
-    let (mode, fit, api_key, mut target_date, current_date) = {
+    let (mode, fit, api_key, random_date, specific_raw, current_date) = {
         let mut d = state.lock().await;
         if d.settings.mode == Mode::Random && d.random_date.is_none() {
             d.random_date = Some(pick_random_date());
@@ -190,23 +243,38 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
             d.settings.mode,
             d.settings.fit_mode,
             d.settings.effective_api_key().to_string(),
-            match d.settings.mode {
-                // En mode jour on ne passe pas de date : l'API renvoie la
-                // derniere image publiee, ce qui evite tout souci de fuseau.
-                Mode::Daily => None,
-                Mode::Random => d.random_date,
-            },
+            d.random_date,
+            d.settings.specific_date.clone(),
             d.current.as_ref().map(|c| c.date.clone()),
         )
     };
 
-    // Recherche d'une APOD de type image. En mode aleatoire, une video ou un
-    // jour sans publication declenche un nouveau tirage.
+    let mut target_date = match mode {
+        // En mode jour on ne passe pas de date : l'API renvoie la derniere
+        // image publiee, ce qui evite tout souci de fuseau horaire.
+        Mode::Daily => None,
+        Mode::Random => random_date,
+        Mode::Specific => match validate_apod_date(&specific_raw) {
+            Ok(date) => Some(date),
+            Err(msg) => {
+                let mut d = state.lock().await;
+                d.status_message = Some(msg.clone());
+                d.last_check = Some(now_stamp());
+                return Err(msg);
+            }
+        },
+    };
+
+    // Recherche d'une APOD exploitable : une image, ou une video avec
+    // vignette (l'API ne fournit pas de fichier video, la vignette en est la
+    // seule representation possible en fond d'ecran). En mode aleatoire, un
+    // jour sans image exploitable ou sans publication declenche un nouveau
+    // tirage.
     let mut apod: Option<Apod> = None;
     let mut failure: Option<ApiError> = None;
     for _ in 0..MAX_RANDOM_ATTEMPTS {
         match nasa_api::fetch_apod(&client, &api_key, target_date).await {
-            Ok(a) if a.is_image() => {
+            Ok(a) if a.has_image() => {
                 apod = Some(a);
                 break;
             }
@@ -217,13 +285,14 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
                     target_date = Some(new_date);
                     continue;
                 }
-                // Mode jour : l'APOD est une video, on conserve l'image
-                // precedente et on le signale (ce n'est pas une erreur).
+                // Mode jour : media sans aucune image exploitable (video sans
+                // vignette...) — on conserve l'image precedente et on le
+                // signale (ce n'est pas une erreur).
                 let mut d = state.lock().await;
                 d.offline = false;
                 d.video_skip_date = Some(a.date.clone());
                 d.status_message = Some(format!(
-                    "L'APOD du {} est une vidéo — image précédente conservée.",
+                    "L'APOD du {} n'a pas d'image exploitable — image précédente conservée.",
                     a.date
                 ));
                 d.last_check = Some(now_stamp());
@@ -246,11 +315,12 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
         return Err(handle_failure(app, &state, failure, fit).await);
     };
 
-    // Deja applique et pas de re-verification forcee : rien a faire.
+    // Deja applique et pas de re-verification forcee : rien a faire, mais on
+    // maintient les messages d'information (jour pas encore publie...).
     if !force && current_date.as_deref() == Some(apod.date.as_str()) {
         let mut d = state.lock().await;
         d.offline = false;
-        d.status_message = None;
+        d.status_message = status_notes(mode, &apod.date, &apod.media_type);
         d.last_check = Some(now_stamp());
         return Ok(());
     }
@@ -268,16 +338,15 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
     let entry = match cached_entry {
         Some(e) => e,
         None => {
-            let hd_url = apod
-                .best_image_url()
-                .expect("is_image() garantit une URL")
-                .to_string();
-            let downloaded = match nasa_api::download_image(&client, &hd_url).await {
-                Ok(bytes) => Ok((hd_url, bytes)),
-                Err(first_err) => match apod.fallback_image_url() {
-                    Some(fallback) => nasa_api::download_image(&client, fallback)
+            let preferred = apod
+                .preferred_download_url()
+                .expect("has_image() garantit une URL");
+            let downloaded = match nasa_api::download_image(&client, &preferred).await {
+                Ok(bytes) => Ok((preferred, bytes)),
+                Err(first_err) => match apod.fallback_download_url() {
+                    Some(fallback) => nasa_api::download_image(&client, &fallback)
                         .await
-                        .map(|bytes| (fallback.to_string(), bytes))
+                        .map(|bytes| (fallback, bytes))
                         .map_err(|_| first_err),
                     None => Err(first_err),
                 },
@@ -304,10 +373,10 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
     match apply_entry(app, &state, &entry, fit).await {
         Ok(()) => {
             let mut d = state.lock().await;
+            d.status_message = status_notes(mode, &entry.date, &entry.media_type);
             d.current = Some(entry);
             d.offline = false;
             d.video_skip_date = None;
-            d.status_message = None;
             d.last_check = Some(now_stamp());
             Ok(())
         }
@@ -378,6 +447,10 @@ async fn handle_failure(
             match d.settings.mode {
                 Mode::Random => d.cache.random().cloned(),
                 Mode::Daily => d.cache.latest().cloned(),
+                // Date precise : uniquement cette date si elle est en cache.
+                // Sinon on ne touche pas au bureau — le fond d'ecran en place
+                // (persiste par l'OS) reste celui que l'utilisateur avait.
+                Mode::Specific => d.cache.get(&d.settings.specific_date).cloned(),
             }
         }
     };
@@ -420,6 +493,11 @@ async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
     let changed = {
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
+        // Le mode date precise exige une date valide deja enregistree ;
+        // le panneau passe normalement par set_specific_date.
+        if mode == Mode::Specific {
+            validate_apod_date(&d.settings.specific_date)?;
+        }
         let changed = d.settings.mode != mode;
         if changed {
             d.settings.mode = mode;
@@ -433,6 +511,41 @@ async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
     };
     if changed {
         check_and_update(&app, true).await?;
+    }
+    Ok(current_ui(&app).await)
+}
+
+#[tauri::command]
+async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, String> {
+    let parsed = validate_apod_date(&date)?;
+    let previous = {
+        let state = app.state::<SharedState>();
+        let mut d = state.0.lock().await;
+        let previous = (d.settings.mode, d.settings.specific_date.clone());
+        d.settings.mode = Mode::Specific;
+        d.settings.specific_date = parsed.format("%Y-%m-%d").to_string();
+        let path = d.settings_path.clone();
+        d.settings.save(&path)?;
+        previous
+    };
+
+    if let Err(msg) = check_and_update(&app, true).await {
+        // Jour sans publication, panne reseau... : on restaure le mode
+        // precedent pour que l'etat affiche reste vrai. Le fond d'ecran
+        // actuel n'a pas ete touche, l'erreur est montree a l'utilisateur.
+        {
+            let state = app.state::<SharedState>();
+            let mut d = state.0.lock().await;
+            d.settings.mode = previous.0;
+            d.settings.specific_date = previous.1;
+            let path = d.settings_path.clone();
+            let _ = d.settings.save(&path);
+        }
+        refresh_ui(&app).await;
+        return Err(format!(
+            "Impossible d'appliquer l'APOD du {} : {msg} Le fond d'écran actuel est conservé.",
+            parsed.format("%d/%m/%Y")
+        ));
     }
     Ok(current_ui(&app).await)
 }
@@ -473,6 +586,14 @@ async fn set_api_key(app: AppHandle, key: String) -> Result<UiState, String> {
 
 #[tauri::command]
 async fn refresh_now(app: AppHandle) -> Result<UiState, String> {
+    {
+        let state = app.state::<SharedState>();
+        let mut d = state.0.lock().await;
+        // En mode aleatoire, rafraichir signifie tirer une nouvelle image.
+        if d.settings.mode == Mode::Random {
+            d.random_date = Some(pick_random_date());
+        }
+    }
     check_and_update(&app, true).await?;
     Ok(current_ui(&app).await)
 }
@@ -541,6 +662,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_state,
             set_mode,
+            set_specific_date,
             set_api_key,
             set_fit_mode,
             refresh_now,

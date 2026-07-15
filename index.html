@@ -44,6 +44,13 @@
             <span id="apod-date">-</span>
             <span id="apod-copyright" class="copyright" hidden></span>
           </p>
+          <div id="video-notice" class="video-notice" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Cette APOD est une vidéo : sa vignette sert de fond d'écran.</span>
+            <button id="open-video" class="link-btn" type="button">Voir la vidéo</button>
+          </div>
           <p id="apod-explanation" class="explanation"></p>
           <button id="open-page" class="link-btn" hidden>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -77,8 +84,29 @@
               </svg>
               Aléatoire
             </button>
+            <button id="mode-specific" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+                <circle cx="12" cy="16" r="2.5"></circle>
+              </svg>
+              Date précise
+            </button>
           </div>
-          <p class="hint">En mode aléatoire, une nouvelle date est tirée au sort à chaque démarrage de l'application.</p>
+          <p class="hint">En mode aléatoire, "Rafraîchir maintenant" tire une nouvelle image, et une nouvelle date est tirée à chaque démarrage.</p>
+
+          <div id="date-picker" hidden>
+            <form id="date-form">
+              <input id="specific-date" type="date" min="1995-06-16" aria-label="Date de l'APOD" />
+              <button type="submit">Appliquer</button>
+            </form>
+            <p class="hint">
+              Dates possibles : du 16 juin 1995 (première APOD publiée) à aujourd'hui.
+              Quelques rares jours n'ont pas de publication.
+            </p>
+          </div>
 
           <h2>Ajustement à l'écran</h2>
           <div class="segmented" role="group" aria-label="Ajustement de l'image">

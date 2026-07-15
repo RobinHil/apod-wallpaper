@@ -159,6 +159,35 @@ h2 {
   cursor: text;
 }
 
+.video-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 12px;
+}
+
+.video-notice svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.video-notice span {
+  flex: 1;
+  min-width: 180px;
+}
+
+.video-notice .link-btn {
+  font-weight: 600;
+}
+
 button {
   font: inherit;
   color: inherit;
@@ -195,6 +224,10 @@ button svg {
   flex: 1;
   border-radius: 0;
   border-right-width: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .segmented button:first-child {
@@ -244,12 +277,18 @@ button svg {
   margin: 4px 0 8px;
 }
 
-#key-form {
+#key-form,
+#date-form {
   display: flex;
   gap: 8px;
 }
 
-#key-form input {
+#date-form {
+  margin-bottom: 8px;
+}
+
+#key-form input,
+#date-form input {
   flex: 1;
   font: inherit;
   color: var(--text);
@@ -261,7 +300,8 @@ button svg {
   cursor: text;
 }
 
-#key-form input:focus {
+#key-form input:focus,
+#date-form input:focus {
   outline: none;
   border-color: var(--accent);
 }
