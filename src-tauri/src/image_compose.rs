@@ -5,6 +5,20 @@ use std::fs;
 use std::io::BufWriter;
 use std::path::Path;
 
+/// Decodes an image file, determining the format from its contents rather than
+/// from its file name. `image::open` trusts the extension alone, which fails
+/// outright for the extension-less temporary file a download lands in, and
+/// trusts the server's naming everywhere else. Decoding is also what validates
+/// a fresh download.
+pub fn decode(path: &Path) -> Result<DynamicImage, String> {
+    image::ImageReader::open(path)
+        .map_err(|e| format!("Could not open the image file: {e}"))?
+        .with_guessed_format()
+        .map_err(|e| format!("Could not read the image file: {e}"))?
+        .decode()
+        .map_err(|e| format!("Not a usable image: {e}"))
+}
+
 /// Ratio difference below which we fill the screen directly: the blurred
 /// backdrop would be invisible behind the image anyway.
 const RATIO_TOLERANCE: f32 = 0.03;
@@ -88,4 +102,24 @@ pub fn save_jpeg(img: &RgbImage, path: &Path) -> Result<(), String> {
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 92);
     img.write_with_encoder(encoder)
         .map_err(|e| format!("JPEG encoding failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_files_without_an_extension() {
+        // A download lands in an extension-less temporary file, so the decoder
+        // has to sniff the contents instead of trusting the file name.
+        let dir = std::env::temp_dir().join("apod-wallpaper-decode-test");
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join(".incoming-image");
+
+        save_jpeg(&RgbImage::from_pixel(8, 4, image::Rgb([10, 20, 30])), &path).unwrap();
+        let decoded = decode(&path).expect("a JPEG with no file extension must decode");
+
+        assert_eq!((decoded.width(), decoded.height()), (8, 4));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

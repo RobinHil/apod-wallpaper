@@ -228,8 +228,8 @@ async fn install(
             .map_err(|e| format!("Could not write the downloaded image: {e}"))?;
         // Decoding is the validation step: a truncated download or a non-image
         // payload fails here, before anything is installed.
-        let original = image::open(&tmp_image)
-            .map_err(|e| format!("The downloaded file is not a usable image: {e}"))?;
+        let original = image_compose::decode(&tmp_image)
+            .map_err(|e| format!("The downloaded file is unusable: {e}"))?;
         let wallpaper = image_compose::compose_wallpaper(&original, width, height, fit);
         image_compose::save_jpeg(&wallpaper, &tmp_wallpaper)?;
         fs::rename(&tmp_image, &final_image)
