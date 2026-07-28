@@ -11,19 +11,7 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "APOD Wallpaper",
-        "width": 440,
-        "height": 640,
-        "resizable": false,
-        "maximizable": false,
-        "visible": false,
-        "center": true,
-        "skipTaskbar": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

@@ -13,7 +13,7 @@ use std::sync::Arc;
 use store::{Applied, Store};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, Wry};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
 use tokio::sync::Mutex;
 
 struct AppData {
@@ -90,10 +90,36 @@ fn screen_size(app: &AppHandle) -> (u32, u32) {
     }
 }
 
+/// Label of the settings panel window, matching `capabilities/default.json`.
+const PANEL: &str = "main";
+
+/// Opens the settings panel, creating the window if it does not exist.
+///
+/// The window is built on demand and destroyed when closed, so no webview
+/// process is resident while the app sits in the tray -- which is where it
+/// spends essentially all of its life. Nothing is lost when it closes: every
+/// setting is persisted by the backend as it is changed.
 fn show_panel(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window(PANEL) {
         let _ = window.show();
         let _ = window.set_focus();
+        return;
+    }
+
+    let built = WebviewWindowBuilder::new(app, PANEL, WebviewUrl::default())
+        .title("APOD Wallpaper")
+        .inner_size(440.0, 640.0)
+        .resizable(false)
+        .maximizable(false)
+        .center()
+        .skip_taskbar(true)
+        .build();
+
+    match built {
+        Ok(window) => {
+            let _ = window.set_focus();
+        }
+        Err(e) => eprintln!("could not open the settings panel: {e}"),
     }
 }
 
@@ -307,13 +333,6 @@ pub fn run() {
             refresh_now,
             quit_app
         ])
-        .on_window_event(|window, event| {
-            // Closing the panel hides it: the app lives in the tray.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
-            }
-        })
         .setup(|app| {
             // No Dock icon: this is a menu-bar application.
             #[cfg(target_os = "macos")]
