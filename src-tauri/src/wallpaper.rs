@@ -1,32 +1,32 @@
 use std::path::Path;
 
-/// Applique l'image en fond d'ecran. La crate `wallpaper` est la seule brique
-/// utilisee :
-/// - Windows : `SystemParametersInfo` (API systeme) ;
-/// - macOS   : AppleScript applique a tous les bureaux ;
-/// - Linux   : GNOME et derives, KDE Plasma, XFCE, LXDE, MATE, Cinnamon,
-///   Deepin, puis repli `swaybg` (Wayland) ou `feh` (X11).
+/// Sets the image as the desktop wallpaper. The `wallpaper` crate is the only
+/// backend used:
+/// - Windows: `SystemParametersInfo` (system API);
+/// - macOS: AppleScript applied to every desktop;
+/// - Linux: GNOME and derivatives, KDE Plasma, XFCE, LXDE, MATE, Cinnamon,
+///   Deepin, then a `swaybg` (Wayland) or `feh` (X11) fallback.
 ///
-/// Un environnement que la crate ne sait pas piloter remonte une erreur
-/// explicite, affichee dans le panneau.
+/// A desktop the crate cannot drive produces an explicit error, shown in the
+/// settings panel.
 ///
-/// # Themes clair / sombre
+/// # Light and dark themes
 ///
-/// Windows, macOS et tous les bureaux Linux pris en charge n'ont qu'un seul
-/// fond d'ecran, commun aux deux themes : l'appel ci-dessous suffit, l'image
-/// s'affiche en mode sombre comme en mode clair. GNOME 42 et suivants font
-/// exception avec une cle distincte pour le theme sombre, completee par
+/// Windows, macOS and every supported Linux desktop have a single wallpaper
+/// shared by both themes, so the call below is enough: the image shows up in
+/// dark mode just as it does in light mode. GNOME 42 and later are the sole
+/// exception, with a separate key for the dark theme, handled by
 /// [`gnome::set_dark_uri`].
 pub fn set_wallpaper(path: &Path) -> Result<(), String> {
     let path = path
         .to_str()
-        .ok_or_else(|| "Chemin du fond d'écran invalide (UTF-8 attendu).".to_string())?;
+        .ok_or_else(|| "Invalid wallpaper path (UTF-8 expected).".to_string())?;
 
     ::wallpaper::set_from_path(path).map_err(|e| failure_message(&e.to_string()))?;
 
-    // L'image est deja composee a la taille exacte de l'ecran ; on force
-    // malgre tout le mode « remplir » la ou la crate sait le faire (macOS ne
-    // l'expose pas). Echec non bloquant.
+    // The image is already composed at the exact screen size, but we still ask
+    // for "fill" wherever the crate supports it, as a safety net (macOS does
+    // not expose it). Failure is not fatal.
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     let _ = ::wallpaper::set_mode(::wallpaper::Mode::Crop);
 
@@ -36,41 +36,41 @@ pub fn set_wallpaper(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Sous Linux l'echec vient presque toujours d'un bureau non reconnu : on
-/// nomme l'environnement detecte et la liste de ceux qui fonctionnent.
+/// On Linux a failure almost always means an unrecognised desktop, so name the
+/// one we detected along with the ones that do work.
 #[cfg(target_os = "linux")]
 fn failure_message(detail: &str) -> String {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP")
         .or_else(|_| std::env::var("DESKTOP_SESSION"))
-        .unwrap_or_else(|_| "inconnu".to_string());
+        .unwrap_or_else(|_| "unknown".to_string());
     format!(
-        "Impossible de définir le fond d'écran (environnement de bureau : {desktop}). \
-         Environnements pris en charge : GNOME et dérivés (Unity, Budgie, Pantheon), \
-         KDE Plasma, XFCE, LXDE, MATE, Cinnamon, Deepin, ainsi que les compositeurs \
-         disposant de swaybg (Wayland) ou feh (X11). Détail : {detail}"
+        "Could not set the wallpaper (desktop environment: {desktop}). \
+         Supported environments: GNOME and derivatives (Unity, Budgie, Pantheon), \
+         KDE Plasma, XFCE, LXDE, MATE, Cinnamon, Deepin, plus any compositor with \
+         swaybg (Wayland) or feh (X11) installed. Details: {detail}"
     )
 }
 
 #[cfg(not(target_os = "linux"))]
 fn failure_message(detail: &str) -> String {
-    format!("Impossible de définir le fond d'écran : {detail}")
+    format!("Could not set the wallpaper: {detail}")
 }
 
-/// Complement GNOME. La crate `wallpaper` ne renseigne que `picture-uri`, la
-/// cle lue par le theme clair. Depuis GNOME 42 le theme sombre lit une cle
-/// separee, `picture-uri-dark` : sans elle, un utilisateur en mode sombre ne
-/// verrait jamais l'image changer.
+/// GNOME add-on. The `wallpaper` crate only writes `picture-uri`, the key the
+/// light theme reads. Since GNOME 42 the dark theme reads a separate key,
+/// `picture-uri-dark`: without it, a user in dark mode would never see the
+/// image change.
 ///
-/// Le module n'utilise que la bibliotheque standard et compile donc sur toutes
-/// les plateformes — `cargo check` et les tests le verifient depuis n'importe
-/// quel OS — mais il n'est appele que sous Linux.
+/// The module only uses the standard library, so it compiles on every platform
+/// -- `cargo check` and the tests cover it from any OS -- but it is only called
+/// on Linux.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod gnome {
     use std::process::Command;
 
-    /// Aligne `picture-uri-dark` sur l'image appliquee. Silencieux et non
-    /// bloquant : avant GNOME 42 la cle n'existe pas et `gsettings` echoue
-    /// sans consequence, l'image restant appliquee via `picture-uri`.
+    /// Points `picture-uri-dark` at the image we just applied. Silent and
+    /// non-fatal: before GNOME 42 the key does not exist and `gsettings` fails
+    /// harmlessly, the image still being applied through `picture-uri`.
     pub fn set_dark_uri(path: &str) {
         let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") else {
             return;
@@ -88,17 +88,17 @@ mod gnome {
             .status();
     }
 
-    /// Reprend la condition de `wallpaper::linux::gnome::is_compliant` : on ne
-    /// complete que les environnements que la crate a effectivement pilotes
-    /// via le schema `org.gnome.desktop.background`. `XDG_CURRENT_DESKTOP`
-    /// vaut par exemple `ubuntu:GNOME` ou `Budgie:GNOME`, d'ou le `contains`.
+    /// Mirrors the condition in `wallpaper::linux::gnome::is_compliant`: only
+    /// complete the desktops the crate actually drove through the
+    /// `org.gnome.desktop.background` schema. `XDG_CURRENT_DESKTOP` holds
+    /// values such as `ubuntu:GNOME` or `Budgie:GNOME`, hence the `contains`.
     fn uses_gnome_schema(desktop: &str) -> bool {
         desktop.contains("GNOME") || desktop == "Unity" || desktop == "Pantheon"
     }
 
-    /// `gsettings` attend une valeur GVariant : une chaine se donne entre
-    /// guillemets, avec antislash et guillemet echappes. Indispensable pour un
-    /// chemin contenant une espace (nom d'utilisateur avec espace).
+    /// `gsettings` expects a GVariant value: a string is quoted, with
+    /// backslashes and quotes escaped. Required for paths containing a space,
+    /// such as a user name with a space in it.
     fn gvariant_string(value: &str) -> String {
         format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
     }
@@ -108,7 +108,7 @@ mod gnome {
         use super::{gvariant_string, uses_gnome_schema};
 
         #[test]
-        fn detect_gnome_family_desktops() {
+        fn detects_gnome_family_desktops() {
             for desktop in ["GNOME", "ubuntu:GNOME", "Budgie:GNOME", "Unity", "Pantheon"] {
                 assert!(uses_gnome_schema(desktop), "{desktop}");
             }
@@ -118,7 +118,7 @@ mod gnome {
         }
 
         #[test]
-        fn quote_paths_for_gsettings() {
+        fn quotes_paths_for_gsettings() {
             assert_eq!(
                 gvariant_string("file:///home/rh/wall-2026-07-28-blur.jpg"),
                 "\"file:///home/rh/wall-2026-07-28-blur.jpg\""

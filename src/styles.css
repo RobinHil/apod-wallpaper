@@ -11,10 +11,9 @@
   --pill-offline: #a15c07;
   --pill-offline-bg: #fdf0d9;
 
-  /* Aligne les elements natifs (calendrier du champ date, barres de
-     defilement, curseur de saisie) sur le theme du systeme : sans cela ils
-     restent clairs, et l'icone du selecteur de date devient invisible sur le
-     fond sombre. */
+  /* Make native controls (date picker calendar, scrollbars, caret) follow the
+     system theme; without this they stay light and the date picker icon is
+     invisible against the dark background. */
   color-scheme: light dark;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu,
@@ -48,10 +47,9 @@
   box-sizing: border-box;
 }
 
-/* L'attribut HTML `hidden` doit toujours gagner, y compris sur les elements
-   auxquels une regle donne un display explicite (overlay en flex, bandeau
-   d'erreur...). Sans ceci, l'overlay de blocage resterait affiche en
-   permanence. */
+/* The HTML `hidden` attribute must always win, including on elements a rule
+   gives an explicit display to (the flex overlay, the error banner...).
+   Without this the blocking overlay would stay visible forever. */
 [hidden] {
   display: none !important;
 }

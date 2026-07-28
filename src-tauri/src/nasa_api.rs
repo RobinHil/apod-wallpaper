@@ -4,9 +4,9 @@ use std::fmt;
 
 const ENDPOINT: &str = "https://api.nasa.gov/planetary/apod";
 
-/// Reponse de l'API APOD. `copyright` est absent pour les images du domaine
-/// public produites par la NASA ; quand il est present, il doit etre conserve
-/// et affiche partout (cache, incrustation, interface).
+/// APOD API response. `copyright` is absent for public-domain images produced
+/// by NASA; when present it must be preserved and shown everywhere (store,
+/// tray, panel).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Apod {
     pub date: String,
@@ -28,10 +28,10 @@ impl Apod {
         self.media_type == "video"
     }
 
-    /// Vrai si une image exploitable en fond d'ecran existe : l'image
-    /// elle-meme, ou la vignette pour une video. L'API ne fournit pas de
-    /// fichier video (seulement un lien d'integration YouTube/Vimeo), donc
-    /// la vignette est la seule representation possible d'une video.
+    /// True when a usable wallpaper image exists: the image itself, or the
+    /// thumbnail for a video. The API serves no video file (only a YouTube or
+    /// Vimeo embed link), so the thumbnail is the only possible representation
+    /// of a video.
     pub fn has_image(&self) -> bool {
         match self.media_type.as_str() {
             "image" => self.hdurl.is_some() || self.url.is_some(),
@@ -40,8 +40,8 @@ impl Apod {
         }
     }
 
-    /// URL a telecharger en priorite : haute definition pour une image,
-    /// vignette en resolution maximale pour une video YouTube.
+    /// Preferred download URL: high definition for an image, highest
+    /// resolution thumbnail for a YouTube video.
     pub fn preferred_download_url(&self) -> Option<String> {
         match self.media_type.as_str() {
             "image" => self
@@ -57,9 +57,9 @@ impl Apod {
         }
     }
 
-    /// URL de repli si le premier telechargement echoue : URL standard pour
-    /// une image, vignette d'origine pour une video (la version maxres
-    /// n'existe pas pour les videos anciennes ou basse definition).
+    /// Fallback URL when the first download fails: the standard URL for an
+    /// image, the original thumbnail for a video (the maxres variant does not
+    /// exist for older or low-definition videos).
     pub fn fallback_download_url(&self) -> Option<String> {
         match self.media_type.as_str() {
             "image" => match (self.hdurl.as_deref(), self.url.as_deref()) {
@@ -68,15 +68,15 @@ impl Apod {
             },
             "video" => {
                 let thumb = self.thumbnail_url.as_deref()?;
-                // Un repli n'a de sens que si on a tente la version maxres.
+                // A fallback only makes sense if we tried the maxres variant.
                 youtube_maxres(thumb).map(|_| thumb.to_string())
             }
             _ => None,
         }
     }
 
-    /// Le champ copyright renvoye par l'API contient souvent des retours a la
-    /// ligne parasites : on normalise en espaces simples.
+    /// The copyright field returned by the API often contains stray newlines,
+    /// so collapse whitespace into single spaces.
     fn normalize(mut self) -> Self {
         if let Some(c) = self.copyright.take() {
             let cleaned = c.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -88,11 +88,10 @@ impl Apod {
     }
 }
 
-/// Pour une vignette YouTube standard (0.jpg, hqdefault.jpg...), construit
-/// l'URL de la vignette en resolution maximale (maxresdefault.jpg, souvent
-/// 1280x720 ; verifie disponible pour les videos NASA recentes). Renvoie
-/// None si l'URL n'est pas une vignette YouTube connue : l'appelant garde
-/// alors l'URL d'origine.
+/// For a standard YouTube thumbnail (0.jpg, hqdefault.jpg, ...), builds the URL
+/// of the highest resolution thumbnail (maxresdefault.jpg, usually 1280x720).
+/// Returns None when the URL is not a known YouTube thumbnail, in which case
+/// the caller keeps the original URL.
 fn youtube_maxres(url: &str) -> Option<String> {
     if !url.contains("img.youtube.com") && !url.contains("ytimg.com") {
         return None;
@@ -114,7 +113,7 @@ mod tests {
     use super::youtube_maxres;
 
     #[test]
-    fn upgrade_standard_youtube_thumbnails() {
+    fn upgrades_standard_youtube_thumbnails() {
         assert_eq!(
             youtube_maxres("https://img.youtube.com/vi/abc123/0.jpg").as_deref(),
             Some("https://img.youtube.com/vi/abc123/maxresdefault.jpg")
@@ -126,33 +125,36 @@ mod tests {
     }
 
     #[test]
-    fn leave_other_urls_untouched() {
+    fn leaves_other_urls_untouched() {
         assert_eq!(youtube_maxres("https://vimeo.com/thumb/42.jpg"), None);
         assert_eq!(
             youtube_maxres("https://img.youtube.com/vi/abc123/maxresdefault.jpg"),
             None
         );
-        assert_eq!(youtube_maxres("https://img.youtube.com/vi/abc123/0.png"), None);
+        assert_eq!(
+            youtube_maxres("https://img.youtube.com/vi/abc123/0.png"),
+            None
+        );
     }
 }
 
 #[derive(Debug)]
 pub enum ApiError {
-    /// Erreur reseau : pas de connexion, DNS, timeout... => mode hors-ligne.
+    /// Network error: no connection, DNS, timeout... treated as offline.
     Network(String),
-    /// Quota de la cle API depasse (HTTP 429).
+    /// API key quota exceeded (HTTP 429).
     RateLimited,
-    /// Pas d'APOD pour la date demandee (jours manquants dans l'historique).
+    /// No APOD for the requested date (the archive has a few gaps).
     NotFound,
-    /// Autre erreur HTTP.
+    /// Any other HTTP error.
     Http(u16),
-    /// Reponse illisible.
+    /// Unreadable response.
     Parse(String),
 }
 
 impl ApiError {
-    /// Vrai si l'erreur correspond a une indisponibilite temporaire justifiant
-    /// le mode hors-ligne et des tentatives silencieuses en arriere-plan.
+    /// True when the error is a temporary outage that warrants retrying in the
+    /// background rather than reporting a hard failure.
     pub fn is_offline(&self) -> bool {
         matches!(
             self,
@@ -164,31 +166,31 @@ impl ApiError {
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ApiError::Network(e) => write!(f, "Erreur réseau : {e}"),
+            ApiError::Network(e) => write!(f, "Network error: {e}"),
             ApiError::RateLimited => write!(
                 f,
-                "Quota de la clé API dépassé (DEMO_KEY : 30 requêtes/heure). Réessai automatique plus tard."
+                "API key quota exceeded (DEMO_KEY allows 30 requests/hour). Will retry automatically."
             ),
             ApiError::NotFound => write!(
                 f,
-                "Aucune APOD n'a été publiée à cette date (l'historique comporte quelques jours sans publication)."
+                "No APOD was published on that date (the archive has a few days with no entry)."
             ),
-            ApiError::Http(code) => write!(f, "Erreur HTTP {code} de l'API NASA."),
-            ApiError::Parse(e) => write!(f, "Réponse de l'API illisible : {e}"),
+            ApiError::Http(code) => write!(f, "HTTP error {code} from the NASA API."),
+            ApiError::Parse(e) => write!(f, "Unreadable API response: {e}"),
         }
     }
 }
 
-/// Interroge l'API APOD. `date: None` renvoie la derniere image publiee (ce
-/// qui evite les erreurs de fuseau horaire : c'est l'API qui decide de la
-/// date du jour, pas l'horloge locale).
+/// Queries the APOD API. `date: None` returns the most recently published
+/// image, which avoids time-zone mistakes: the API decides what "today" is
+/// rather than the local clock.
 pub async fn fetch_apod(
     client: &reqwest::Client,
     api_key: &str,
     date: Option<NaiveDate>,
 ) -> Result<Apod, ApiError> {
-    // thumbs=true : l'API joint la vignette des videos, seule representation
-    // exploitable en fond d'ecran (aucun fichier video n'est fourni).
+    // thumbs=true asks the API to include video thumbnails, the only usable
+    // wallpaper representation of a video (no video file is served).
     let mut request = client
         .get(ENDPOINT)
         .query(&[("api_key", api_key), ("thumbs", "true")]);
@@ -208,13 +210,13 @@ pub async fn fetch_apod(
             .map(Apod::normalize)
             .map_err(|e| ApiError::Parse(e.to_string())),
         429 => Err(ApiError::RateLimited),
-        // L'API repond 404 ou 400 pour les dates sans publication.
+        // The API answers 404 or 400 for dates with no publication.
         400 | 404 => Err(ApiError::NotFound),
         code => Err(ApiError::Http(code)),
     }
 }
 
-/// Telecharge les octets bruts d'une image.
+/// Downloads the raw bytes of an image.
 pub async fn download_image(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, ApiError> {
     let response = client
         .get(url)

@@ -5,13 +5,13 @@ use std::fs;
 use std::io::BufWriter;
 use std::path::Path;
 
-/// Ecart de ratio en dessous duquel on remplit directement l'ecran :
-/// le fond flou serait invisible derriere l'image.
+/// Ratio difference below which we fill the screen directly: the blurred
+/// backdrop would be invisible behind the image anyway.
 const RATIO_TOLERANCE: f32 = 0.03;
 
-/// Compose l'image finale a la taille exacte de l'ecran. Aucun texte n'est
-/// incruste : le fond d'ecran est l'APOD telle quelle, les metadonnees
-/// (date, copyright) restent visibles dans le tray et le panneau.
+/// Composes the final image at the exact screen size. No text is burned in:
+/// the wallpaper is the APOD as published, and the metadata (date, copyright)
+/// stays visible in the tray and the panel.
 pub fn compose_wallpaper(
     original: &DynamicImage,
     screen_w: u32,
@@ -29,8 +29,8 @@ pub fn compose_wallpaper(
     }
 }
 
-/// Fond = image recadree pour remplir l'ecran puis floutee et assombrie.
-/// Premier plan = image entiere (ratio preserve) centree par-dessus.
+/// Backdrop = image cropped to fill the screen, then blurred and darkened.
+/// Foreground = whole image, aspect preserved, centred on top.
 fn blur_fill(original: &DynamicImage, screen_w: u32, screen_h: u32) -> RgbaImage {
     let img_ratio = original.width() as f32 / original.height().max(1) as f32;
     let screen_ratio = screen_w as f32 / screen_h as f32;
@@ -41,8 +41,8 @@ fn blur_fill(original: &DynamicImage, screen_w: u32, screen_h: u32) -> RgbaImage
             .to_rgba8();
     }
 
-    // Flou gaussien prononce a moindre cout : on floute une version reduite
-    // (1/8) puis on la re-agrandit, l'interpolation lisse le reste.
+    // Heavy gaussian blur on the cheap: blur a 1/8 scale copy and scale it back
+    // up, letting interpolation smooth out the rest.
     let small = original.resize_to_fill(
         (screen_w / 8).max(1),
         (screen_h / 8).max(1),
@@ -62,8 +62,8 @@ fn blur_fill(original: &DynamicImage, screen_w: u32, screen_h: u32) -> RgbaImage
     background
 }
 
-/// Assombrit legerement le fond flou pour que l'image nette centree ressorte
-/// quelle que soit la photo.
+/// Slightly darkens the blurred backdrop so the sharp centred image stands out
+/// whatever the photo.
 fn darken(img: &mut RgbaImage, factor: f32) {
     for p in img.pixels_mut() {
         for c in 0..3 {
@@ -72,18 +72,18 @@ fn darken(img: &mut RgbaImage, factor: f32) {
     }
 }
 
-/// Enregistre la composition en JPEG (qualite 92) : bien plus compact qu'un
-/// PNG pour des photos, sans perte visible en fond d'ecran.
+/// Saves the composition as JPEG (quality 92): far smaller than PNG for
+/// photographs, with no visible loss as a wallpaper.
 pub fn save_jpeg(img: &RgbaImage, path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
-            .map_err(|e| format!("Création du dossier de sortie impossible : {e}"))?;
+            .map_err(|e| format!("Could not create the output directory: {e}"))?;
     }
     let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
-    let file = fs::File::create(path)
-        .map_err(|e| format!("Création du fichier fond d'écran impossible : {e}"))?;
+    let file =
+        fs::File::create(path).map_err(|e| format!("Could not create the wallpaper file: {e}"))?;
     let mut writer = BufWriter::new(file);
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 92);
     rgb.write_with_encoder(encoder)
-        .map_err(|e| format!("Encodage JPEG impossible : {e}"))
+        .map_err(|e| format!("JPEG encoding failed: {e}"))
 }

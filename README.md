@@ -1,62 +1,61 @@
 # APOD Wallpaper
 
-Application desktop legere et multiplateforme (Windows, macOS, Linux) qui definit
-automatiquement l'image astronomique du jour de la NASA (APOD, *Astronomy Picture
-of the Day*) comme fond d'ecran. Elle vit dans la barre d'etat systeme (system tray)
-et fonctionne en arriere-plan.
+A small cross-platform desktop app (Windows, macOS, Linux) that sets NASA's
+Astronomy Picture of the Day (APOD) as your wallpaper. It lives in the system
+tray and runs in the background.
 
-Construite avec [Tauri 2](https://tauri.app) : backend Rust, popup de reglages en
-TypeScript/HTML/CSS vanilla. Pas de framework JS, pas de dependance superflue.
+Built with [Tauri 2](https://tauri.app): Rust backend, vanilla
+TypeScript/HTML/CSS settings panel. No JS framework, no superfluous dependency.
 
-## Fonctionnalites
+## Features
 
-- **Image du jour** : recupere l'APOD courante via l'API NASA et l'applique en fond d'ecran.
-- **Mode aleatoire** : tire une date au sort dans tout l'historique APOD (depuis le
-  16 juin 1995) a chaque demarrage de l'application ; le bouton "Rafraichir
-  maintenant" tire une nouvelle image immediatement.
-- **Mode date precise** : affiche l'APOD d'une date choisie via un selecteur,
-  borne entre le 16 juin 1995 (premiere APOD) et aujourd'hui.
-- **Verification automatique** : au demarrage, puis en continu tant que l'application
-  tourne (nouvelle image quotidienne detectee automatiquement).
-- **Tray en lecture seule** : le menu de la barre d'etat affiche le titre de
-  l'image, sa date et son copyright, et permet d'ouvrir le panneau ou de quitter.
-  Tous les reglages et le rafraichissement manuel se font dans le panneau.
-- **Interface fiable** : chaque action du panneau bloque l'interface (indicateur
-  visible) jusqu'a son application complete, et toute erreur s'affiche dans un
-  bandeau — aucune operation n'echoue en silence.
-- **Adaptation intelligente au ratio de l'ecran** (mode par defaut "fond flou") :
-  l'image originale est centree entiere et sans deformation par-dessus une version
-  d'elle-meme agrandie, floutee et assombrie qui remplit l'ecran. Un mode
-  "recadrer pour remplir" (sans flou) est disponible dans les reglages. Aucun
-  texte n'est incruste sur l'image : les credits (date, copyright) restent
-  visibles dans le tray et le panneau.
-- **Cache local** : historique des dernieres images telechargees (60 max) avec leurs
-  metadonnees dans `metadata.json`.
-- **Mode hors-ligne** : en cas de coupure reseau ou de quota API depasse, la derniere
-  image chargee reste en place, l'application reessaie silencieusement en arriere-plan
-  (toutes les 15 minutes) et l'etat hors-ligne est indique dans le tray et le panneau.
-- **Cle API configurable** : `DEMO_KEY` par defaut, cle personnelle enregistrable
-  depuis le panneau (persistee localement).
+- **Picture of the day**: fetches the current APOD through the NASA API and
+  applies it as the wallpaper.
+- **Random mode**: draws a date at random from the whole APOD archive (since
+  16 June 1995); "Refresh now" draws a new image immediately.
+- **Specific date mode**: shows the APOD for a date you pick, bounded between
+  16 June 1995 (the first APOD) and today.
+- **Automatic checks**: at startup, then continuously while the app runs (a new
+  daily image is picked up automatically).
+- **Read-only tray**: the tray menu shows the image title, its date and its
+  copyright, and lets you open the panel or quit. Every setting and the manual
+  refresh live in the panel.
+- **Predictable UI**: each panel action blocks the interface (with a visible
+  indicator) until it has fully applied, and every error is shown in a banner --
+  no operation fails silently.
+- **Screen-ratio aware** (default "blurred fill" mode): the original image is
+  centred whole and undistorted over a scaled-up, blurred and darkened copy of
+  itself that fills the screen. A "crop to fill" mode (no blur) is available in
+  the settings. No text is burned into the image: credits (date, copyright)
+  stay visible in the tray and the panel.
+- **Local store**: history of the most recently downloaded images (60 max) with
+  their metadata in `metadata.json`.
+- **Offline mode**: on a network outage or an exceeded API quota, the last
+  loaded image stays in place, the app retries silently in the background
+  (every 15 minutes) and the offline state is shown in the tray and the panel.
+- **Configurable API key**: `DEMO_KEY` by default, personal key saved from the
+  panel (stored locally).
 
-## Prerequis
+## Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install) (stable, via rustup)
-- [Node.js](https://nodejs.org) 18 ou plus recent, avec npm
-- Les prerequis systeme de Tauri selon votre OS :
+- [Node.js](https://nodejs.org) 18 or newer, with npm
+- Tauri's system prerequisites for your OS:
   <https://tauri.app/start/prerequisites/>
 
-Par plateforme :
+Per platform:
 
-| OS      | Dependances supplementaires |
-|---------|-----------------------------|
-| Windows | WebView2 (preinstalle sur Windows 10/11), Microsoft C++ Build Tools |
+| OS      | Extra dependencies |
+|---------|--------------------|
+| Windows | WebView2 (preinstalled on Windows 10/11), Microsoft C++ Build Tools |
 | macOS   | Xcode Command Line Tools (`xcode-select --install`) |
-| Linux   | `webkit2gtk-4.1`, `libappindicator3` (ou `libayatana-appindicator`), `librsvg2`, `patchelf` -- voir la page de prerequis Tauri pour la liste exacte selon la distribution |
+| Linux   | `webkit2gtk-4.1`, `libappindicator3` (or `libayatana-appindicator`), `librsvg2`, `patchelf` -- see the Tauri prerequisites page for the exact list per distribution |
 
-Note Linux : l'icone tray requiert un environnement qui prend en charge les
-`StatusNotifierItem`/AppIndicator (extension "AppIndicator" necessaire sous GNOME).
+Linux note: the tray icon requires an environment that supports
+`StatusNotifierItem`/AppIndicator (the "AppIndicator" extension is needed under
+GNOME).
 
-## Installation et lancement en developpement
+## Install and run in development
 
 ```bash
 cd apod-wallpaper
@@ -64,157 +63,148 @@ npm install
 npm run tauri dev
 ```
 
-Au premier lancement, l'application :
+On first launch the app:
 
-1. interroge l'API APOD (avec `DEMO_KEY` si aucune cle n'est configuree) ;
-2. telecharge l'image (HD si disponible) et l'enregistre dans le cache ;
-3. compose l'image finale a la resolution de l'ecran principal (fond flou +
-   image centree, sans texte incruste) ;
-4. la definit comme fond d'ecran ;
-5. s'installe dans la barre d'etat. La fenetre de reglages est cachee par defaut :
-   elle s'ouvre via le menu du tray ("Ouvrir APOD Wallpaper").
+1. queries the APOD API (with `DEMO_KEY` when no key is configured);
+2. downloads the image (HD when available) and stores it locally;
+3. composes the final image at the primary screen's resolution (blurred fill +
+   centred image, no burned-in text);
+4. sets it as the wallpaper;
+5. installs itself in the tray. The settings window is hidden by default: open
+   it from the tray menu ("Open APOD Wallpaper").
 
-## Build de production
+## Production build
 
 ```bash
 npm run tauri build
 ```
 
-Les artefacts sont generes dans `src-tauri/target/release/bundle/` :
+Artifacts land in `src-tauri/target/release/bundle/`:
 
-- **Windows** : installeur `.msi` (WiX) et `.exe` (NSIS) -- a construire depuis Windows
-- **macOS** : bundle `.app` et image `.dmg` -- a construire depuis macOS
-- **Linux** : `.deb`, `.rpm` et `.AppImage` -- a construire depuis Linux
+- **Windows**: `.msi` (WiX) and `.exe` (NSIS) installers -- build from Windows
+- **macOS**: `.app` bundle and `.dmg` image -- build from macOS
+- **Linux**: `.deb`, `.rpm` and `.AppImage` -- build from Linux
 
-La compilation croisee n'est pas prise en charge par Tauri : chaque plateforme se
-construit depuis l'OS cible (en CI, une matrice GitHub Actions
-`windows-latest`/`macos-latest`/`ubuntu-latest` est l'approche habituelle).
+Tauri does not support cross-compilation: every platform is built from its
+target OS (in CI, a GitHub Actions matrix over
+`windows-latest`/`macos-latest`/`ubuntu-latest` is the usual approach).
 
-## Configuration de la cle API NASA
+## Configuring the NASA API key
 
-Par defaut l'application utilise `DEMO_KEY`, limitee a **30 requetes/heure et
-50 requetes/jour** (par adresse IP). C'est suffisant pour un usage normal, mais une
-cle personnelle gratuite est recommandee :
+By default the app uses `DEMO_KEY`, limited to **30 requests/hour and 50
+requests/day** (per IP address). That is enough for normal use, but a free
+personal key is recommended:
 
-1. Demandez une cle sur <https://api.nasa.gov/> (formulaire simple, cle recue par email).
-2. Ouvrez le panneau de l'application (menu tray, entree "Ouvrir APOD Wallpaper").
-3. Collez la cle dans le champ "Cle API NASA" et cliquez sur "Enregistrer".
+1. Request a key at <https://api.nasa.gov/> (simple form, key sent by email).
+2. Open the app panel (tray menu, "Open APOD Wallpaper").
+3. Paste the key in the "NASA API key" field and click "Save".
 
-La cle est stockee localement dans `settings.json` (voir "Donnees locales" ci-dessous)
-et n'est envoyee qu'a l'API NASA.
+The key is stored locally in `settings.json` (see "Local data" below) and is
+only ever sent to the NASA API.
 
-## Structure du projet
+## Project layout
 
 ```
 apod-wallpaper/
-|- src-tauri/                  # Backend Rust
+|- src-tauri/                  # Rust backend
 |  |- src/
-|  |  |- main.rs               # Point d'entree binaire
-|  |  |- lib.rs                # Setup Tauri : tray, menu, scheduler, commandes
-|  |  |- nasa_api.rs           # Appel API APOD, parsing, typologie d'erreurs
-|  |  |- cache.rs              # Historique local (metadata.json + fichiers images)
-|  |  |- image_compose.rs      # Adaptation ratio : fond flou ou recadrage
-|  |  |- wallpaper.rs          # Definition du fond d'ecran par plateforme
-|  |  `- settings.rs           # Cle API, mode, ajustement ; persistance JSON
+|  |  |- main.rs               # Binary entry point
+|  |  |- lib.rs                # Tauri setup: tray, menu, scheduler, commands
+|  |  |- nasa_api.rs           # APOD API calls, parsing, error taxonomy
+|  |  |- cache.rs              # Local history (metadata.json + image files)
+|  |  |- image_compose.rs      # Ratio handling: blurred fill or crop
+|  |  |- wallpaper.rs          # Per-platform wallpaper setting
+|  |  `- settings.rs           # API key, mode, fit; JSON persistence
 |  |- icons/
-|  |  `- app-icon.svg          # Source vectorielle de l'icone (regenerer via `tauri icon`)
+|  |  `- app-icon.svg          # Vector source of the icon (regenerate with `tauri icon`)
 |  |- capabilities/default.json
 |  `- tauri.conf.json
-|- src/                        # Frontend du popup (vanilla TypeScript)
-|  |- main.ts                  # Rendu de l'etat, commandes vers le backend
-|  `- styles.css               # Theme clair/sombre (prefers-color-scheme)
-|- index.html                  # Structure du panneau (icones SVG inline)
+|- src/                        # Panel frontend (vanilla TypeScript)
+|  |- main.ts                  # State rendering, commands to the backend
+|  `- styles.css               # Light/dark theme (prefers-color-scheme)
+|- index.html                  # Panel structure (inline SVG icons)
 `- README.md
 ```
 
-## Donnees locales
+## Local data
 
-L'application ecrit dans le dossier de donnees standard de l'OS
-(`com.rh.apod-wallpaper`) :
+The app writes to the OS standard data directory (`com.rh.apod-wallpaper`):
 
-- **macOS** : `~/Library/Application Support/com.rh.apod-wallpaper/`
-- **Windows** : `%APPDATA%\com.rh.apod-wallpaper\`
-- **Linux** : `~/.local/share/com.rh.apod-wallpaper/`
+- **macOS**: `~/Library/Application Support/com.rh.apod-wallpaper/`
+- **Windows**: `%APPDATA%\com.rh.apod-wallpaper\`
+- **Linux**: `~/.local/share/com.rh.apod-wallpaper/`
 
-Contenu :
+Contents:
 
 ```
-settings.json                  # cle API, mode (jour/aleatoire/date precise), date choisie, ajustement
+settings.json                  # API key, mode (daily/random/specific), chosen date, fit
 cache/
-|- metadata.json               # historique des images et de leurs metadonnees
-|- images/<date>.<ext>         # images originales telechargees
-`- wallpapers/wall-<date>-<fit>.jpg   # compositions finales appliquees
+|- metadata.json               # image history and metadata
+|- images/<date>.<ext>         # downloaded original images
+`- wallpapers/wall-<date>-<fit>.jpg   # final applied compositions
 ```
 
-## Choix techniques notables
+## Notable design decisions
 
-- **APOD de type video** : certaines publications APOD sont des videos. L'API ne
-  fournit aucun fichier video (seulement un lien d'integration YouTube/Vimeo), un
-  fond d'ecran anime n'est donc pas envisageable sans dependances lourdes
-  (telechargement du flux, lecteur permanent derriere le bureau, consommation
-  CPU/batterie continue). A la place, la **vignette** de la video est utilisee
-  comme fond d'ecran : pour YouTube, la version en resolution maximale
-  (`maxresdefault`, souvent 1280x720) est tentee d'abord, avec repli sur la
-  vignette standard. Le panneau signale qu'il s'agit d'une video et propose un
-  lien direct pour la regarder ; le tray ajoute "(vidéo)" au titre. Si aucune
-  vignette n'est disponible, l'image precedente est conservee (mode jour) ou une
-  nouvelle date est tiree au sort (mode aleatoire).
-- **Mode jour sans parametre de date** : l'application demande a l'API "la derniere
-  image publiee" plutot que la date locale, ce qui elimine les decalages de fuseau
-  horaire (l'APOD est publiee sur le fuseau de la cote Est americaine) et gere
-  automatiquement les jours sans publication : la veille (ou la derniere date
-  publiee) est affichee, avec un message d'information dans le panneau tant que
-  l'APOD du jour n'est pas disponible.
-- **Jours sans publication** : l'historique APOD comporte quelques dates sans
-  entree (notamment en 1995). Selon le mode : "image du jour" affiche la derniere
-  publication avec un indicateur ; "aleatoire" retire silencieusement une autre
-  date ; "date precise" refuse la date avec un message d'erreur, conserve le fond
-  d'ecran en place et restaure le mode precedent.
-- **Flou gaussien economique** : le fond est floute sur une version reduite (1/8) de
-  l'image puis re-agrandi ; le rendu est equivalent a un flou prononce sur l'image
-  pleine taille pour une fraction du cout CPU.
-- **Themes clair et sombre** : sur Windows, macOS et la quasi-totalite des
-  bureaux Linux, le fond d'ecran est unique et s'applique quel que soit le
-  theme actif. GNOME 42 et suivants sont la seule exception : le theme sombre
-  lit une cle distincte (`picture-uri-dark`), que l'application renseigne en
-  plus de `picture-uri` pour que l'image change aussi en mode sombre.
-- **Nom de fichier variable** : la composition finale inclut la date et le mode
-  d'ajustement dans son nom de fichier, car certains bureaux (macOS notamment)
-  mettent le fond d'ecran en cache par chemin et ignorent un fichier reecrit en place.
-- **Erreurs jamais silencieuses** : les commandes du panneau (changement de mode,
-  rafraichissement, ajustement, cle API) attendent la fin complete de l'operation
-  cote Rust et renvoient l'erreur eventuelle au frontend, qui bloque l'interface
-  pendant l'attente et affiche l'erreur dans un bandeau. La boucle de fond consigne
-  ses echecs dans le statut visible du panneau.
-- **Droits d'auteur** : le champ `copyright` de l'API est conserve dans le cache
-  et affiche dans le tray et le panneau. Quand il est present, l'image
-  n'est **pas** dans le domaine public : elle appartient a son auteur et l'usage
-  est limite au fond d'ecran personnel. Les images sans copyright sont produites
-  par la NASA et relevent du domaine public.
+- **Video APODs**: some APOD entries are videos. The API serves no video file
+  (only a YouTube/Vimeo embed link), so an animated wallpaper is not feasible
+  without heavy dependencies (stream download, a permanent player behind the
+  desktop, continuous CPU/battery drain). Instead the video **thumbnail** is
+  used: for YouTube the maximum-resolution version (`maxresdefault`, usually
+  1280x720) is tried first, falling back to the standard thumbnail. The panel
+  flags it as a video and offers a direct link to watch it; the tray appends
+  "(video)" to the title. When no thumbnail is available, the previous image is
+  kept (daily mode) or a new date is drawn (random mode).
+- **Daily mode sends no date parameter**: the app asks the API for "the most
+  recently published image" rather than the local date, which removes time-zone
+  skew (APOD is published on US Eastern time) and handles days with no
+  publication: the previous day (or the latest published date) is shown, with an
+  informational message in the panel until today's APOD is available.
+- **Days with no publication**: the APOD archive has a few dates with no entry
+  (mostly in 1995). Per mode: "picture of the day" shows the latest publication
+  with an indicator; "random" silently draws another date; "specific date"
+  rejects the date with an error, keeps the current wallpaper and restores the
+  previous mode.
+- **Light and dark themes**: on Windows, macOS and nearly every Linux desktop
+  the wallpaper is a single image applied whatever the active theme. GNOME 42
+  and later are the one exception: the dark theme reads a separate key
+  (`picture-uri-dark`), which the app sets alongside `picture-uri` so the image
+  changes in dark mode too.
+- **Cheap gaussian blur**: the backdrop is blurred on a 1/8 scale copy then
+  scaled back up; the result matches a heavy blur on the full-size image for a
+  fraction of the CPU cost.
+- **Varying file name**: the final composition embeds the date and the fit mode
+  in its file name, because some desktops (macOS in particular) cache the
+  wallpaper by path and ignore a file rewritten in place.
+- **Errors are never silent**: panel commands (mode change, refresh, fit, API
+  key) wait for the Rust side to finish and return any error to the frontend,
+  which blocks the UI while waiting and shows the error in a banner. The
+  background loop records its failures in the status visible from the panel.
+- **Copyright**: the API's `copyright` field is kept in the store and shown in
+  the tray and the panel. When present, the image is **not** public domain: it
+  belongs to its author and use is limited to a personal wallpaper. Images
+  without a copyright are produced by NASA and are public domain.
 
-## Limitations connues
+## Known limitations
 
-- **Linux** : la definition du fond d'ecran depend de l'environnement de bureau.
-  Sont pris en charge, via la crate `wallpaper` : GNOME et ses derives (Unity,
-  Budgie, Pantheon), KDE Plasma, XFCE, LXDE, MATE, Cinnamon, Deepin, et en
-  dernier recours tout compositeur ou `swaybg` (Wayland) ou `feh` (X11) est
-  installe. Sur un environnement non reconnu, un message explicite est affiche
-  dans le panneau. Les compositeurs sans bureau declare (Hyprland, sway, i3...)
-  passent par ce repli : chaque application d'image y relance `swaybg`, ce qui
-  peut entrer en conflit avec un daemon de fond d'ecran deja en place
-  (`swww`, `hyprpaper`) ; ces environnements ne sont pas pris en charge
-  officiellement.
-- **Multi-ecrans** : l'image est composee a la resolution de l'ecran principal ;
-  les ecrans secondaires recoivent la meme image (le support d'une composition par
-  ecran est une evolution possible).
-- **Verification quotidienne** : la detection de la nouvelle image du jour se fait
-  par sondage toutes les 15 minutes apres minuit (heure locale), jusqu'a ce que
-  l'API publie la nouvelle APOD.
-- **macOS** : le changement de fond d'ecran passe par un evenement AppleScript ;
-  au premier lancement, macOS peut demander l'autorisation de controler
-  "System Events" (a accepter).
+- **Linux**: setting the wallpaper depends on the desktop environment.
+  Supported through the `wallpaper` crate: GNOME and its derivatives (Unity,
+  Budgie, Pantheon), KDE Plasma, XFCE, LXDE, MATE, Cinnamon, Deepin, and as a
+  last resort any compositor with `swaybg` (Wayland) or `feh` (X11) installed.
+  On an unrecognised environment an explicit message is shown in the panel.
+  Compositors with no declared desktop (Hyprland, sway, i3...) go through that
+  fallback: each application relaunches `swaybg`, which can conflict with a
+  wallpaper daemon already in place (`swww`, `hyprpaper`); those environments
+  are not officially supported.
+- **Multiple monitors**: the image is composed at the primary screen's
+  resolution; secondary screens get the same image (per-screen composition is a
+  possible evolution).
+- **Daily check**: the new daily image is detected by polling every 15 minutes
+  after midnight (local time), until the API publishes the new APOD.
+- **macOS**: setting the wallpaper goes through an AppleScript event; on first
+  launch macOS may ask for permission to control "System Events" (accept it).
 
-## Licences
+## Licence
 
-- Code du projet : a definir par l'auteur du depot.
-- Les images APOD avec mention de copyright restent la propriete de leurs auteurs.
+- Project code: to be defined by the repository owner.
+- APOD images with a copyright notice remain the property of their authors.

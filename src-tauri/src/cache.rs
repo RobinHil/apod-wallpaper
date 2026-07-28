@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-/// Nombre maximum d'images conservees dans l'historique local.
+/// Maximum number of images kept in the local history.
 const MAX_ENTRIES: usize = 60;
 
-/// Une image APOD telechargee avec ses metadonnees. Le champ `copyright` est
-/// conserve tel quel : quand il est present, l'image n'est pas dans le
-/// domaine public et l'attribution est obligatoire.
+/// A downloaded APOD image with its metadata. The `copyright` field is kept
+/// verbatim: when present the image is not public domain and attribution is
+/// mandatory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
     pub date: String,
@@ -17,15 +17,15 @@ pub struct CacheEntry {
     pub explanation: String,
     #[serde(default)]
     pub copyright: Option<String>,
-    /// "image" ou "video" ; pour une video, le fichier stocke est la vignette.
+    /// "image" or "video"; for a video the stored file is the thumbnail.
     #[serde(default = "default_media_type")]
     pub media_type: String,
-    /// Lien de la video (YouTube/Vimeo) quand media_type == "video", pour
-    /// que le panneau puisse l'ouvrir directement.
+    /// Video link (YouTube/Vimeo) when media_type == "video", so the panel can
+    /// open it directly.
     #[serde(default)]
     pub video_url: Option<String>,
     pub source_url: String,
-    /// Nom du fichier image original dans `images/`.
+    /// Name of the original image file inside `images/`.
     pub image_file: String,
     pub fetched_at: String,
 }
@@ -39,10 +39,10 @@ struct MetadataFile {
     entries: Vec<CacheEntry>,
 }
 
-/// Historique local des images. Structure sur disque :
+/// Local image history. On-disk layout:
 ///   <app_data>/cache/metadata.json
-///   <app_data>/cache/images/<date>.<ext>        (originaux)
-///   <app_data>/cache/wallpapers/apod-<date>-<fit>.jpg  (compositions finales)
+///   <app_data>/cache/images/<date>.<ext>                (originals)
+///   <app_data>/cache/wallpapers/wall-<date>-<fit>.jpg   (final compositions)
 pub struct Cache {
     root: PathBuf,
     entries: Vec<CacheEntry>,
@@ -70,13 +70,13 @@ impl Cache {
         self.entries.iter().find(|e| e.date == date)
     }
 
-    /// Entree la plus recente par date de publication : c'est la "derniere
-    /// image chargee avec succes" utilisee comme repli hors-ligne.
+    /// Most recent entry by publication date: the "last successfully loaded
+    /// image" used as the offline fallback.
     pub fn latest(&self) -> Option<&CacheEntry> {
         self.entries.iter().max_by(|a, b| a.date.cmp(&b.date))
     }
 
-    /// Tirage aleatoire dans le cache (repli du mode aleatoire hors-ligne).
+    /// Random pick from the store (offline fallback for random mode).
     pub fn random(&self) -> Option<&CacheEntry> {
         use rand::RngExt;
         if self.entries.is_empty() {
@@ -90,11 +90,11 @@ impl Cache {
         self.images_dir().join(&entry.image_file)
     }
 
-    /// Le fichier compose porte la date et le mode d'ajustement dans son nom :
-    /// un chemin different a chaque changement force les bureaux qui mettent
-    /// le fond d'ecran en cache par chemin (macOS notamment) a le recharger.
-    /// Le prefixe "wall-" distingue le format actuel (sans texte incruste)
-    /// des anciennes compositions "apod-", qui sont ainsi ignorees.
+    /// The composed file carries the date and the fit mode in its name: a
+    /// different path on every change forces desktops that cache the wallpaper
+    /// by path (macOS in particular) to reload it. The "wall-" prefix
+    /// distinguishes the current format (no burned-in text) from older
+    /// "apod-" compositions, which are therefore ignored.
     pub fn wallpaper_path(&self, date: &str, fit: FitMode) -> PathBuf {
         let suffix = match fit {
             FitMode::BlurFill => "blur",
@@ -104,8 +104,8 @@ impl Cache {
             .join(format!("wall-{date}-{suffix}.jpg"))
     }
 
-    /// Enregistre l'image originale et ses metadonnees, puis purge les plus
-    /// anciennes entrees au-dela de la limite.
+    /// Stores the original image and its metadata, then prunes the oldest
+    /// entries beyond the limit.
     pub fn store(
         &mut self,
         apod: &Apod,
@@ -121,9 +121,9 @@ impl Cache {
         let file_name = format!("{}.{}", apod.date, ext);
 
         fs::create_dir_all(self.images_dir())
-            .map_err(|e| format!("Création du dossier de cache impossible : {e}"))?;
+            .map_err(|e| format!("Could not create the store directory: {e}"))?;
         fs::write(self.images_dir().join(&file_name), bytes)
-            .map_err(|e| format!("Écriture de l'image en cache impossible : {e}"))?;
+            .map_err(|e| format!("Could not write the image to the store: {e}"))?;
 
         let entry = CacheEntry {
             date: apod.date.clone(),
@@ -152,8 +152,7 @@ impl Cache {
         if self.entries.len() <= MAX_ENTRIES {
             return;
         }
-        // Les plus anciens telechargements partent en premier, sauf l'entree
-        // qu'on vient d'appliquer.
+        // Oldest downloads go first, except the entry we just applied.
         self.entries.sort_by(|a, b| a.fetched_at.cmp(&b.fetched_at));
         while self.entries.len() > MAX_ENTRIES {
             let Some(pos) = self.entries.iter().position(|e| e.date != keep_date) else {
@@ -169,20 +168,20 @@ impl Cache {
 
     fn save_metadata(&self) -> Result<(), String> {
         fs::create_dir_all(&self.root)
-            .map_err(|e| format!("Création du dossier de cache impossible : {e}"))?;
+            .map_err(|e| format!("Could not create the store directory: {e}"))?;
         let meta = MetadataFile {
             entries: self.entries.clone(),
         };
         let raw = serde_json::to_string_pretty(&meta)
-            .map_err(|e| format!("Sérialisation des métadonnées impossible : {e}"))?;
+            .map_err(|e| format!("Could not serialise metadata: {e}"))?;
         fs::write(self.root.join("metadata.json"), raw)
-            .map_err(|e| format!("Écriture de metadata.json impossible : {e}"))
+            .map_err(|e| format!("Could not write metadata.json: {e}"))
     }
 
     pub fn ensure_dirs(&self) -> Result<(), String> {
         for dir in [self.images_dir(), self.wallpapers_dir()] {
             fs::create_dir_all(&dir)
-                .map_err(|e| format!("Création du dossier {} impossible : {e}", dir.display()))?;
+                .map_err(|e| format!("Could not create directory {}: {e}", dir.display()))?;
         }
         Ok(())
     }

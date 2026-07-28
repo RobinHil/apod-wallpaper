@@ -2,40 +2,39 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-/// Cle utilisee quand l'utilisateur n'a pas fourni la sienne.
-/// Limites DEMO_KEY : 30 requetes/heure, 50/jour.
+/// Key used when the user has not supplied their own.
+/// DEMO_KEY limits: 30 requests/hour, 50/day.
 pub const DEMO_KEY: &str = "DEMO_KEY";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
-    /// Image APOD du jour courant.
+    /// Today's APOD.
     Daily,
-    /// Date aleatoire dans l'historique APOD, tiree a chaque demarrage
-    /// (et a chaque rafraichissement manuel).
+    /// A random date from the APOD archive.
     Random,
-    /// Date fixe choisie par l'utilisateur (champ `specific_date`).
+    /// A fixed date chosen by the user (see `specific_date`).
     Specific,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FitMode {
-    /// Image entiere centree sur un fond flou qui remplit l'ecran (defaut).
+    /// Whole image centred over a blurred fill of itself (default).
     BlurFill,
-    /// Recadrage de l'image pour remplir l'ecran, sans flou.
+    /// Image cropped to fill the screen, no blur.
     CropFill,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// Cle API NASA personnelle. Chaine vide = DEMO_KEY.
+    /// Personal NASA API key. Empty string means DEMO_KEY.
     pub api_key: String,
     pub mode: Mode,
     pub fit_mode: FitMode,
-    /// Date choisie pour le mode `Specific`, au format AAAA-MM-JJ.
-    /// Chaine vide tant que l'utilisateur n'a jamais choisi de date.
+    /// Date for `Specific` mode, formatted YYYY-MM-DD. Empty until the user
+    /// picks one.
     pub specific_date: String,
 }
 
@@ -61,12 +60,11 @@ impl Settings {
     pub fn save(&self, path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| format!("Creation du dossier de configuration impossible : {e}"))?;
+                .map_err(|e| format!("Could not create the configuration directory: {e}"))?;
         }
         let raw = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("Serialisation des parametres impossible : {e}"))?;
-        fs::write(path, raw)
-            .map_err(|e| format!("Ecriture du fichier de parametres impossible : {e}"))
+            .map_err(|e| format!("Could not serialise settings: {e}"))?;
+        fs::write(path, raw).map_err(|e| format!("Could not write the settings file: {e}"))
     }
 
     pub fn effective_api_key(&self) -> &str {

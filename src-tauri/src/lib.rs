@@ -18,24 +18,24 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 use tokio::sync::Mutex;
 
-/// Premiere APOD publiee : borne basse du tirage aleatoire.
+/// First APOD ever published: lower bound for the random draw.
 const APOD_START: (i32, u32, u32) = (1995, 6, 16);
-/// Cadence de la boucle de fond (verification quotidienne + reprises hors-ligne).
+/// Background loop cadence (daily check plus offline retries).
 const CHECK_INTERVAL: Duration = Duration::from_secs(15 * 60);
-/// Nombre de re-tirages en mode aleatoire quand la date tombe sur une video
-/// ou un jour sans publication.
+/// Number of re-draws in random mode when the date lands on a video or a day
+/// with no publication.
 const MAX_RANDOM_ATTEMPTS: usize = 6;
 
 struct AppData {
     settings: Settings,
     settings_path: PathBuf,
     cache: Cache,
-    /// Image actuellement appliquee en fond d'ecran.
+    /// Image currently applied as the wallpaper.
     current: Option<CacheEntry>,
-    /// Date tiree au sort au demarrage (mode aleatoire).
+    /// Date drawn at startup (random mode).
     random_date: Option<NaiveDate>,
-    /// Date d'une APOD video deja rencontree, pour ne pas re-interroger
-    /// l'API toutes les 15 minutes un jour sans image.
+    /// Date of an APOD video already seen, so we do not re-query the API every
+    /// 15 minutes on a day with no image.
     video_skip_date: Option<String>,
     offline: bool,
     status_message: Option<String>,
@@ -44,17 +44,17 @@ struct AppData {
 
 struct SharedState(Arc<Mutex<AppData>>);
 struct HttpClient(reqwest::Client);
-/// Garde anti-reentrance : une seule mise a jour a la fois.
+/// Re-entrancy guard: one update at a time.
 struct UpdateFlag(AtomicBool);
 
-/// Poignees vers les entrees du menu tray dont le texte change dynamiquement.
-/// Le tray est en lecture seule : il n'affiche que le titre et les credits.
+/// Handles to the tray menu entries whose text changes over time. The tray is
+/// read-only: it shows the title and the credits.
 struct TrayHandles {
     title: MenuItem<Wry>,
     info: MenuItem<Wry>,
 }
 
-/// Etat envoye au panneau (frontend).
+/// State pushed to the settings panel (frontend).
 #[derive(Clone, Serialize)]
 struct UiState {
     mode: Mode,
@@ -92,18 +92,18 @@ fn today_str() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// Messages d'information (non bloquants) accompagnant une image appliquee :
-/// APOD du jour pas encore publiee, vignette de video...
+/// Informational, non-blocking notes shown alongside an applied image: today's
+/// APOD not published yet, video thumbnail in use...
 fn status_notes(mode: Mode, date: &str, media_type: &str) -> Option<String> {
     let mut notes: Vec<String> = Vec::new();
     if mode == Mode::Daily && date < today_str().as_str() {
         notes.push(format!(
-            "L'APOD du jour n'est pas encore publiée — affichage de la plus récente ({date})."
+            "Today's APOD is not published yet -- showing the most recent one ({date})."
         ));
     }
     if media_type == "video" {
         notes.push(format!(
-            "L'APOD du {date} est une vidéo : sa vignette est utilisée en fond d'écran."
+            "The APOD for {date} is a video: its thumbnail is used as the wallpaper."
         ));
     }
     if notes.is_empty() {
@@ -128,7 +128,7 @@ fn truncate(s: &str, max: usize) -> String {
 
 fn apod_start_date() -> NaiveDate {
     NaiveDate::from_ymd_opt(APOD_START.0, APOD_START.1, APOD_START.2)
-        .expect("date de depart APOD invalide")
+        .expect("invalid APOD start date")
 }
 
 fn pick_random_date() -> NaiveDate {
@@ -142,27 +142,27 @@ fn pick_random_date() -> NaiveDate {
         .unwrap_or(today)
 }
 
-/// Analyse et borne une date choisie par l'utilisateur : entre la premiere
-/// APOD (16 juin 1995) et aujourd'hui.
+/// Parses and bounds a user-chosen date: between the first APOD (16 June 1995)
+/// and today.
 fn validate_apod_date(raw: &str) -> Result<NaiveDate, String> {
     let raw = raw.trim();
     if raw.is_empty() {
-        return Err("Choisissez d'abord une date.".to_string());
+        return Err("Pick a date first.".to_string());
     }
     let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
-        .map_err(|_| format!("Date invalide : « {raw} » (format attendu : AAAA-MM-JJ)."))?;
+        .map_err(|_| format!("Invalid date: \"{raw}\" (expected format: YYYY-MM-DD)."))?;
     let start = apod_start_date();
     if date < start {
-        return Err("La première APOD date du 16 juin 1995 : choisissez une date à partir de ce jour.".to_string());
+        return Err("The first APOD dates from 16 June 1995: pick a date from that day on.".to_string());
     }
     if date > Local::now().date_naive() {
-        return Err("Cette date est dans le futur : choisissez une date passée ou aujourd'hui.".to_string());
+        return Err("That date is in the future: pick today or an earlier date.".to_string());
     }
     Ok(date)
 }
 
-/// Resolution physique de l'ecran principal ; les autres ecrans recoivent la
-/// meme image (limite documentee dans le README).
+/// Physical resolution of the primary monitor; other monitors get the same
+/// image (documented limitation in the README).
 fn screen_size(app: &AppHandle) -> (u32, u32) {
     match app.primary_monitor() {
         Ok(Some(monitor)) => {
@@ -180,7 +180,7 @@ fn show_panel(app: &AppHandle) {
     }
 }
 
-/// Pousse l'etat courant vers le panneau et vers les textes du menu tray.
+/// Pushes the current state to the panel and to the tray menu labels.
 async fn refresh_ui(app: &AppHandle) {
     let ui = current_ui(app).await;
     let _ = app.emit("state-updated", &ui);
@@ -192,18 +192,18 @@ async fn refresh_ui(app: &AppHandle) {
             .map(|c| {
                 let t = truncate(&c.title, 60);
                 if c.media_type == "video" {
-                    format!("{t} (vidéo)")
+                    format!("{t} (video)")
                 } else {
                     t
                 }
             })
-            .unwrap_or_else(|| "Aucune image chargée".to_string());
+            .unwrap_or_else(|| "No image loaded".to_string());
         let info = ui
             .current
             .as_ref()
             .map(|c| match &c.copyright {
-                Some(cr) => format!("{} — © {}", c.date, truncate(cr, 45)),
-                None => format!("{} — NASA (domaine public)", c.date),
+                Some(cr) => format!("{} -- (c) {}", c.date, truncate(cr, 45)),
+                None => format!("{} -- NASA (public domain)", c.date),
             })
             .unwrap_or_else(|| "-".to_string());
         let _ = tray.title.set_text(title);
@@ -211,17 +211,15 @@ async fn refresh_ui(app: &AppHandle) {
     }
 }
 
-/// Point d'entree de toute mise a jour (demarrage, boucle de fond, actions du
-/// panneau). Toute erreur est remontee a l'appelant : les commandes du
-/// panneau la transmettent au frontend, la boucle de fond la conserve dans
-/// le statut (elle est deja enregistree dans l'etat au moment de l'echec).
+/// Entry point for every update (startup, background loop, panel actions).
+/// Errors are returned to the caller: panel commands forward them to the
+/// frontend, the background loop keeps them in the status (they are already
+/// recorded in the state at the point of failure).
 async fn check_and_update(app: &AppHandle, force: bool) -> Result<(), String> {
     {
         let flag = app.state::<UpdateFlag>();
         if flag.0.swap(true, Ordering::SeqCst) {
-            return Err(
-                "Une mise à jour est déjà en cours, réessayez dans un instant.".to_string(),
-            );
+            return Err("An update is already running, try again in a moment.".to_string());
         }
     }
     let result = do_update(app, force).await;
@@ -250,8 +248,8 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
     };
 
     let mut target_date = match mode {
-        // En mode jour on ne passe pas de date : l'API renvoie la derniere
-        // image publiee, ce qui evite tout souci de fuseau horaire.
+        // In daily mode we send no date: the API returns the most recently
+        // published image, which sidesteps time-zone issues.
         Mode::Daily => None,
         Mode::Random => random_date,
         Mode::Specific => match validate_apod_date(&specific_raw) {
@@ -265,11 +263,10 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
         },
     };
 
-    // Recherche d'une APOD exploitable : une image, ou une video avec
-    // vignette (l'API ne fournit pas de fichier video, la vignette en est la
-    // seule representation possible en fond d'ecran). En mode aleatoire, un
-    // jour sans image exploitable ou sans publication declenche un nouveau
-    // tirage.
+    // Look for a usable APOD: an image, or a video with a thumbnail (the API
+    // serves no video file, so the thumbnail is the only possible wallpaper
+    // representation). In random mode, a day with no usable image or no
+    // publication triggers a new draw.
     let mut apod: Option<Apod> = None;
     let mut failure: Option<ApiError> = None;
     for _ in 0..MAX_RANDOM_ATTEMPTS {
@@ -285,14 +282,14 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
                     target_date = Some(new_date);
                     continue;
                 }
-                // Mode jour : media sans aucune image exploitable (video sans
-                // vignette...) — on conserve l'image precedente et on le
-                // signale (ce n'est pas une erreur).
+                // Daily mode: media with no usable image (video without a
+                // thumbnail...) -- keep the previous image and say so (this is
+                // not an error).
                 let mut d = state.lock().await;
                 d.offline = false;
                 d.video_skip_date = Some(a.date.clone());
                 d.status_message = Some(format!(
-                    "L'APOD du {} n'a pas d'image exploitable — image précédente conservée.",
+                    "The APOD for {} has no usable image -- previous image kept.",
                     a.date
                 ));
                 d.last_check = Some(now_stamp());
@@ -315,8 +312,8 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
         return Err(handle_failure(app, &state, failure, fit).await);
     };
 
-    // Deja applique et pas de re-verification forcee : rien a faire, mais on
-    // maintient les messages d'information (jour pas encore publie...).
+    // Already applied and no forced re-check: nothing to do, but keep the
+    // informational notes up to date (day not published yet...).
     if !force && current_date.as_deref() == Some(apod.date.as_str()) {
         let mut d = state.lock().await;
         d.offline = false;
@@ -325,8 +322,8 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    // Image originale : depuis le cache si possible, sinon telechargement
-    // (HD en priorite, URL standard en repli).
+    // Original image: from the store when possible, otherwise downloaded (HD
+    // first, standard URL as a fallback).
     let cached_entry = {
         let d = state.lock().await;
         match d.cache.get(&apod.date) {
@@ -340,7 +337,7 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
         None => {
             let preferred = apod
                 .preferred_download_url()
-                .expect("has_image() garantit une URL");
+                .expect("has_image() guarantees a URL");
             let downloaded = match nasa_api::download_image(&client, &preferred).await {
                 Ok(bytes) => Ok((preferred, bytes)),
                 Err(first_err) => match apod.fallback_download_url() {
@@ -389,9 +386,9 @@ async fn do_update(app: &AppHandle, force: bool) -> Result<(), String> {
     }
 }
 
-/// Compose puis applique une entree du cache en fond d'ecran. La composition
-/// n'est recalculee que si le fichier pour cette date et cet ajustement est
-/// absent ; sinon le JPEG existant est reapplique tel quel.
+/// Composes then applies a stored entry as the wallpaper. The composition is
+/// only recomputed when the file for that date and fit mode is missing;
+/// otherwise the existing JPEG is re-applied as is.
 async fn apply_entry(
     app: &AppHandle,
     state: &Arc<Mutex<AppData>>,
@@ -411,20 +408,20 @@ async fn apply_entry(
         let wall = wall_path.clone();
         tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
             let img = image::open(&image_path)
-                .map_err(|e| format!("Lecture de l'image en cache impossible : {e}"))?;
+                .map_err(|e| format!("Could not read the stored image: {e}"))?;
             let composed = image_compose::compose_wallpaper(&img, w, h, fit);
             image_compose::save_jpeg(&composed, &wall)
         })
         .await
-        .map_err(|e| format!("Tâche de composition interrompue : {e}"))??;
+        .map_err(|e| format!("Composition task interrupted: {e}"))??;
     }
 
     wallpaper::set_wallpaper(&wall_path)
 }
 
-/// Echec de l'API : passage en mode hors-ligne si pertinent, repli sur le
-/// cache local si aucune image n'est encore appliquee, et retour du message
-/// destine a l'utilisateur.
+/// API failure: switch to offline mode when relevant, fall back to the local
+/// store when no image has been applied yet, and return the message meant for
+/// the user.
 async fn handle_failure(
     app: &AppHandle,
     state: &Arc<Mutex<AppData>>,
@@ -434,7 +431,7 @@ async fn handle_failure(
     let (message, offline) = match err {
         Some(e) => (e.to_string(), e.is_offline()),
         None => (
-            "Aucune image trouvée après plusieurs tirages. Nouvel essai plus tard.".to_string(),
+            "No image found after several draws. Will try again later.".to_string(),
             false,
         ),
     };
@@ -447,9 +444,9 @@ async fn handle_failure(
             match d.settings.mode {
                 Mode::Random => d.cache.random().cloned(),
                 Mode::Daily => d.cache.latest().cloned(),
-                // Date precise : uniquement cette date si elle est en cache.
-                // Sinon on ne touche pas au bureau — le fond d'ecran en place
-                // (persiste par l'OS) reste celui que l'utilisateur avait.
+                // Specific date: only that date if it is in the store.
+                // Otherwise leave the desktop alone -- the wallpaper in place
+                // (persisted by the OS) stays the one the user had.
                 Mode::Specific => d.cache.get(&d.settings.specific_date).cloned(),
             }
         }
@@ -464,8 +461,8 @@ async fn handle_failure(
     d.offline = offline;
     let user_message = if offline {
         match &d.current {
-            Some(c) => format!("Hors-ligne — dernière image du {} conservée. {message}", c.date),
-            None => format!("Hors-ligne — {message}"),
+            Some(c) => format!("Offline -- keeping the last image from {}. {message}", c.date),
+            None => format!("Offline -- {message}"),
         }
     } else {
         message
@@ -476,10 +473,10 @@ async fn handle_failure(
 }
 
 // ---------------------------------------------------------------------------
-// Commandes exposees au panneau. Chaque commande attend la fin complete de
-// l'operation avant de repondre : le frontend bloque son interface pendant
-// ce temps et affiche l'erreur eventuelle. Aucun travail n'est lance en
-// arriere-plan sans que son resultat soit remonte.
+// Commands exposed to the panel. Each command waits for the operation to fully
+// finish before answering: the frontend blocks its UI meanwhile and shows any
+// error. No work is started in the background without its result being
+// reported.
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
@@ -493,8 +490,8 @@ async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
     let changed = {
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
-        // Le mode date precise exige une date valide deja enregistree ;
-        // le panneau passe normalement par set_specific_date.
+        // Specific-date mode requires a valid date already stored; the panel
+        // normally goes through set_specific_date.
         if mode == Mode::Specific {
             validate_apod_date(&d.settings.specific_date)?;
         }
@@ -530,9 +527,9 @@ async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, Stri
     };
 
     if let Err(msg) = check_and_update(&app, true).await {
-        // Jour sans publication, panne reseau... : on restaure le mode
-        // precedent pour que l'etat affiche reste vrai. Le fond d'ecran
-        // actuel n'a pas ete touche, l'erreur est montree a l'utilisateur.
+        // Day with no publication, network outage...: restore the previous
+        // mode so the displayed state stays truthful. The current wallpaper
+        // was not touched and the error is shown to the user.
         {
             let state = app.state::<SharedState>();
             let mut d = state.0.lock().await;
@@ -543,7 +540,7 @@ async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, Stri
         }
         refresh_ui(&app).await;
         return Err(format!(
-            "Impossible d'appliquer l'APOD du {} : {msg} Le fond d'écran actuel est conservé.",
+            "Could not apply the APOD for {}: {msg} The current wallpaper is kept.",
             parsed.format("%d/%m/%Y")
         ));
     }
@@ -589,7 +586,7 @@ async fn refresh_now(app: AppHandle) -> Result<UiState, String> {
     {
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
-        // En mode aleatoire, rafraichir signifie tirer une nouvelle image.
+        // In random mode, refreshing means drawing a new image.
         if d.settings.mode == Mode::Random {
             d.random_date = Some(pick_random_date());
         }
@@ -604,15 +601,15 @@ fn quit_app(app: AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Tray : lecture seule. Informations sur l'image courante, ouverture du
-// panneau, sortie. Tous les reglages se font dans le panneau.
+// Tray: read-only. Information about the current image, opening the panel,
+// quitting. Every setting lives in the panel.
 // ---------------------------------------------------------------------------
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
-    let title = MenuItem::with_id(app, "title", "Chargement...", false, None::<&str>)?;
+    let title = MenuItem::with_id(app, "title", "Loading...", false, None::<&str>)?;
     let info = MenuItem::with_id(app, "info", "-", false, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Ouvrir APOD Wallpaper", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open APOD Wallpaper", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
@@ -631,7 +628,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     TrayIconBuilder::with_id("apod-tray")
         .icon(
             app.default_window_icon()
-                .expect("icone par defaut absente")
+                .expect("missing default icon")
                 .clone(),
         )
         .tooltip("APOD Wallpaper")
@@ -648,14 +645,14 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Entree
+// Entry point
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Deuxieme lancement : on montre le panneau de l'instance existante.
+            // Second launch: show the panel of the existing instance.
             show_panel(app);
         }))
         .plugin(tauri_plugin_opener::init())
@@ -669,14 +666,14 @@ pub fn run() {
             quit_app
         ])
         .on_window_event(|window, event| {
-            // Fermer le panneau le cache : l'application vit dans le tray.
+            // Closing the panel hides it: the app lives in the tray.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();
             }
         })
         .setup(|app| {
-            // Pas d'icone dans le Dock : application de barre de menus.
+            // No Dock icon: this is a menu-bar application.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -714,16 +711,16 @@ pub fn run() {
 
             build_tray(app)?;
 
-            // Verification au demarrage puis boucle de fond : nouvelle image
-            // quotidienne et reprises silencieuses apres une coupure reseau.
-            // Les echecs sont deja consignes dans le statut (tray + panneau).
+            // Startup check then background loop: picks up the new daily image
+            // and silently recovers after a network outage. Failures are
+            // already recorded in the status (tray + panel).
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let _ = check_and_update(&handle, false).await;
 
                 let mut interval = tokio::time::interval(CHECK_INTERVAL);
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-                interval.tick().await; // premier tick immediat
+                interval.tick().await; // first tick is immediate
 
                 loop {
                     interval.tick().await;
@@ -754,10 +751,10 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("erreur au lancement de l'application")
+        .expect("error while launching the application")
         .run(|_app, event| {
-            // Sans fenetre visible, on empeche la sortie automatique :
-            // l'application ne quitte que via le menu tray.
+            // With no visible window, prevent the automatic exit: the app only
+            // quits through the tray menu.
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                 if code.is_none() {
                     api.prevent_exit();

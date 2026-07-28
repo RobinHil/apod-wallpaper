@@ -31,20 +31,19 @@ interface UiState {
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
-  if (!node) throw new Error(`Élément introuvable : ${id}`);
+  if (!node) throw new Error(`Element not found: ${id}`);
   return node as T;
 }
 
-/** Page officielle d'une APOD : https://apod.nasa.gov/apod/apYYMMDD.html */
+/** Official page of an APOD: https://apod.nasa.gov/apod/apYYMMDD.html */
 function apodPageUrl(date: string): string {
   const [y, m, d] = date.split("-");
   return `https://apod.nasa.gov/apod/ap${y.slice(2)}${m}${d}.html`;
 }
 
 /**
- * L'API fournit des liens d'integration (embed) ; on les convertit en pages
- * regardables directement dans le navigateur. Les URLs inconnues sont
- * ouvertes telles quelles.
+ * The API serves embed links; convert them to pages that can be watched
+ * directly in a browser. Unknown URLs are opened as they are.
  */
 function watchableVideoUrl(url: string): string {
   const youtube = url.match(/youtube\.com\/embed\/([A-Za-z0-9_-]+)/);
@@ -56,23 +55,23 @@ function watchableVideoUrl(url: string): string {
 
 let currentDate: string | null = null;
 let currentVideoUrl: string | null = null;
-/** Le selecteur de date reste visible apres un clic sur "Date précise",
- *  meme tant que le mode reel n'a pas encore bascule. */
+/** The date picker stays visible after clicking "Specific date", even while
+ *  the real mode has not switched over yet. */
 let datePickerRequested = false;
 
 // -----------------------------------------------------------------------
-// Blocage de l'interface et affichage des erreurs.
+// UI blocking and error reporting.
 //
-// Chaque action passe par run() : l'interface entière est masquée par un
-// overlay tant que le backend n'a pas terminé (ou échoué), puis l'état
-// renvoyé par la commande est affiché. Toute erreur apparaît dans un
-// bandeau : rien n'échoue en silence.
+// Every action goes through run(): the whole UI is covered by an overlay
+// until the backend finishes (or fails), then the state returned by the
+// command is rendered. Any error shows up in a banner: nothing fails
+// silently.
 // -----------------------------------------------------------------------
 
 let pending = false;
 
 function setBlocked(blocked: boolean, label?: string): void {
-  el<HTMLSpanElement>("overlay-label").textContent = label ?? "Application en cours...";
+  el<HTMLSpanElement>("overlay-label").textContent = label ?? "Applying...";
   el<HTMLDivElement>("overlay").hidden = !blocked;
 }
 
@@ -94,11 +93,11 @@ async function run(command: string, args?: Record<string, unknown>, label?: stri
     render(await invoke<UiState>(command, args));
   } catch (error) {
     showError(String(error));
-    // Resynchronise l'affichage avec l'etat reel du backend apres un echec.
+    // Resynchronise the display with the real backend state after a failure.
     try {
       render(await invoke<UiState>("get_state"));
     } catch {
-      // Backend injoignable : on garde l'affichage courant et l'erreur visible.
+      // Backend unreachable: keep the current display and the visible error.
     }
   } finally {
     pending = false;
@@ -107,19 +106,19 @@ async function run(command: string, args?: Record<string, unknown>, label?: stri
 }
 
 // -----------------------------------------------------------------------
-// Rendu
+// Rendering
 // -----------------------------------------------------------------------
 
 function render(state: UiState): void {
   const pill = el<HTMLSpanElement>("status-pill");
   if (state.offline) {
-    pill.textContent = "Hors-ligne";
+    pill.textContent = "Offline";
     pill.className = "pill offline";
   } else if (state.current) {
-    pill.textContent = "En ligne";
+    pill.textContent = "Online";
     pill.className = "pill online";
   } else {
-    pill.textContent = "Chargement";
+    pill.textContent = "Loading";
     pill.className = "pill";
   }
 
@@ -137,8 +136,8 @@ function render(state: UiState): void {
     title.textContent = state.current.title;
     date.textContent = state.current.date;
     copyright.textContent = state.current.copyright
-      ? `© ${state.current.copyright}`
-      : "NASA (domaine public)";
+      ? `(c) ${state.current.copyright}`
+      : "NASA (public domain)";
     copyright.hidden = false;
     explanation.textContent = state.current.explanation;
     openPage.hidden = false;
@@ -146,7 +145,7 @@ function render(state: UiState): void {
   } else {
     currentDate = null;
     currentVideoUrl = null;
-    title.textContent = "Aucune image chargée";
+    title.textContent = "No image loaded";
     date.textContent = "-";
     copyright.hidden = true;
     explanation.textContent = "";
@@ -173,8 +172,8 @@ function render(state: UiState): void {
 
   const parts: string[] = [];
   if (state.status_message) parts.push(state.status_message);
-  if (state.last_check) parts.push(`Dernière vérification : ${state.last_check}`);
-  el<HTMLSpanElement>("last-check").textContent = parts.join(" — ");
+  if (state.last_check) parts.push(`Last check: ${state.last_check}`);
+  el<HTMLSpanElement>("last-check").textContent = parts.join(" - ");
 }
 
 async function refreshState(): Promise<void> {
@@ -186,35 +185,34 @@ async function refreshState(): Promise<void> {
 }
 
 // -----------------------------------------------------------------------
-// Cablage
+// Wiring
 // -----------------------------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
   void refreshState();
 
-  // Mises a jour poussees par le backend (verification quotidienne,
-  // demarrage...) : on ne rafraichit pas pendant une action en cours pour
-  // ne pas perturber le blocage.
+  // Updates pushed by the backend (daily check, startup...): do not re-render
+  // while an action is running, so the blocking overlay is not disturbed.
   void listen<UiState>("state-updated", (event) => {
     if (!pending) render(event.payload);
   });
 
-  // Borne haute du selecteur : aujourd'hui (heure locale).
+  // Upper bound of the picker: today (local time).
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   el<HTMLInputElement>("specific-date").max = today;
 
   el<HTMLButtonElement>("mode-daily").addEventListener("click", () => {
     datePickerRequested = false;
-    void run("set_mode", { mode: "daily" }, "Passage en mode image du jour...");
+    void run("set_mode", { mode: "daily" }, "Switching to picture of the day...");
   });
   el<HTMLButtonElement>("mode-random").addEventListener("click", () => {
     datePickerRequested = false;
-    void run("set_mode", { mode: "random" }, "Tirage d'une image aléatoire...");
+    void run("set_mode", { mode: "random" }, "Drawing a random image...");
   });
   el<HTMLButtonElement>("mode-specific").addEventListener("click", () => {
-    // Pas d'appel backend ici : on devoile le selecteur, le mode ne bascule
-    // reellement qu'une fois une date choisie et appliquee.
+    // No backend call here: reveal the picker, the mode only switches once a
+    // date has been chosen and applied.
     datePickerRequested = true;
     el<HTMLDivElement>("date-picker").hidden = false;
     el<HTMLInputElement>("specific-date").focus();
@@ -223,25 +221,25 @@ window.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     const date = el<HTMLInputElement>("specific-date").value;
     if (!date) {
-      showError("Choisissez d'abord une date.");
+      showError("Pick a date first.");
       return;
     }
-    void run("set_specific_date", { date }, `Chargement de l'APOD du ${date}...`);
+    void run("set_specific_date", { date }, `Loading the APOD for ${date}...`);
   });
   el<HTMLButtonElement>("fit-blur").addEventListener("click", () => {
-    void run("set_fit_mode", { fit: "blur_fill" }, "Recomposition du fond d'écran...");
+    void run("set_fit_mode", { fit: "blur_fill" }, "Recomposing the wallpaper...");
   });
   el<HTMLButtonElement>("fit-crop").addEventListener("click", () => {
-    void run("set_fit_mode", { fit: "crop_fill" }, "Recomposition du fond d'écran...");
+    void run("set_fit_mode", { fit: "crop_fill" }, "Recomposing the wallpaper...");
   });
   el<HTMLButtonElement>("refresh").addEventListener("click", () => {
-    void run("refresh_now", undefined, "Vérification de la dernière image...");
+    void run("refresh_now", undefined, "Checking for the latest image...");
   });
 
   el<HTMLFormElement>("key-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const key = el<HTMLInputElement>("api-key").value;
-    void run("set_api_key", { key }, "Enregistrement de la clé...");
+    void run("set_api_key", { key }, "Saving the key...");
   });
 
   el<HTMLButtonElement>("error-close").addEventListener("click", hideError);
