@@ -20,8 +20,9 @@ const MAX_RANDOM_ATTEMPTS: usize = 6;
 pub enum Outcome {
     /// Nothing left to do until the local day changes.
     Satisfied,
-    /// Today's APOD is not published yet: try again later.
-    Retry,
+    /// Today's APOD is not published yet. Worth another look later, but there
+    /// is no hurry: this is not a failure.
+    AwaitingPublication,
 }
 
 type State = Arc<Mutex<AppData>>;
@@ -105,7 +106,7 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
                 );
                 finish(state, Some(message)).await;
                 return Ok(if settings.mode == Mode::Daily && apod.date < today {
-                    Outcome::Retry
+                    Outcome::AwaitingPublication
                 } else {
                     Outcome::Satisfied
                 });
@@ -136,7 +137,7 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
             }
             finish(state, note(&settings, a, &today)).await;
             return Ok(if settings.mode == Mode::Daily && a.date < today {
-                Outcome::Retry
+                Outcome::AwaitingPublication
             } else {
                 Outcome::Satisfied
             });
@@ -174,7 +175,7 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
 
     finish(state, note(&settings, &record, &today)).await;
     Ok(if settings.mode == Mode::Daily && record.date < today {
-        Outcome::Retry
+        Outcome::AwaitingPublication
     } else {
         Outcome::Satisfied
     })
@@ -292,8 +293,8 @@ async fn reapply(
     let tmp = tmp_wallpaper.clone();
     let target = final_wallpaper.clone();
     let composed = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        let image = image::open(&original)
-            .map_err(|e| format!("Could not read the stored image: {e}"))?;
+        let image =
+            image::open(&original).map_err(|e| format!("Could not read the stored image: {e}"))?;
         let wallpaper = image_compose::compose_wallpaper(&image, width, height, fit);
         image_compose::save_jpeg(&wallpaper, &tmp)?;
         fs::rename(&tmp, &target).map_err(|e| format!("Could not store the wallpaper: {e}"))
@@ -465,23 +466,47 @@ mod tests {
     #[test]
     fn daily_is_on_target_only_for_todays_publication() {
         let s = settings(Mode::Daily, "");
-        assert!(on_target(&s, &record("2026-07-28", "2026-07-28"), "2026-07-28"));
+        assert!(on_target(
+            &s,
+            &record("2026-07-28", "2026-07-28"),
+            "2026-07-28"
+        ));
         // Yesterday's picture applied today: today's is still awaited.
-        assert!(!on_target(&s, &record("2026-07-27", "2026-07-28"), "2026-07-28"));
+        assert!(!on_target(
+            &s,
+            &record("2026-07-27", "2026-07-28"),
+            "2026-07-28"
+        ));
     }
 
     #[test]
     fn random_is_on_target_for_any_image_drawn_today() {
         let s = settings(Mode::Random, "");
-        assert!(on_target(&s, &record("1999-01-01", "2026-07-28"), "2026-07-28"));
-        assert!(!on_target(&s, &record("1999-01-01", "2026-07-27"), "2026-07-28"));
+        assert!(on_target(
+            &s,
+            &record("1999-01-01", "2026-07-28"),
+            "2026-07-28"
+        ));
+        assert!(!on_target(
+            &s,
+            &record("1999-01-01", "2026-07-27"),
+            "2026-07-28"
+        ));
     }
 
     #[test]
     fn specific_is_on_target_for_the_chosen_date_only() {
         let s = settings(Mode::Specific, "2001-02-03");
-        assert!(on_target(&s, &record("2001-02-03", "2026-07-01"), "2026-07-28"));
-        assert!(!on_target(&s, &record("2001-02-04", "2026-07-28"), "2026-07-28"));
+        assert!(on_target(
+            &s,
+            &record("2001-02-03", "2026-07-01"),
+            "2026-07-28"
+        ));
+        assert!(!on_target(
+            &s,
+            &record("2001-02-04", "2026-07-28"),
+            "2026-07-28"
+        ));
     }
 
     #[test]

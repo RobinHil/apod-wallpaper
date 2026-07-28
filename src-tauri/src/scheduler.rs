@@ -9,6 +9,12 @@ use tauri::AppHandle;
 /// handful of string comparisons, and saves three platform-specific power and
 /// clock notification backends.
 const MAX_SLEEP: Duration = Duration::from_secs(30 * 60);
+/// Interval used while waiting for today's APOD to be published. Deliberately
+/// unhurried: this is not a failure, and polling the API every 15 minutes from
+/// local midnight until publication would burn most of DEMO_KEY's 50 daily
+/// requests just asking whether the picture is out yet. Half an hour late to a
+/// daily wallpaper is invisible.
+const PUBLICATION_RETRY: Duration = Duration::from_secs(30 * 60);
 /// First retry delay after a failure; doubled on each further failure.
 const BACKOFF_START: Duration = Duration::from_secs(10);
 /// Ceiling for the retry delay.
@@ -20,11 +26,11 @@ const BACKOFF_MAX: Duration = Duration::from_secs(15 * 60);
 /// is armed while everything is up to date, beyond that single sleep: there is
 /// no polling of the API and no periodic wallpaper reapplication.
 ///
-/// A failed attempt (offline, API outage) or an APOD that is not published yet
-/// switches to an exponential backoff with jitter, capped at 15 minutes, which
-/// stops as soon as an attempt succeeds. A failed connection with no network
-/// returns locally in about a millisecond, so retrying costs far less than
-/// keeping a connectivity-monitoring subsystem resident.
+/// A failed attempt (offline, API outage) switches to an exponential backoff
+/// with jitter, capped at 15 minutes, which stops as soon as an attempt
+/// succeeds. A failed connection with no network returns locally in about a
+/// millisecond, so retrying costs far less than keeping a
+/// connectivity-monitoring subsystem resident.
 pub async fn run(app: AppHandle) {
     let mut backoff = BACKOFF_START;
     loop {
@@ -33,7 +39,11 @@ pub async fn run(app: AppHandle) {
                 backoff = BACKOFF_START;
                 until_next_day_change()
             }
-            Ok(Outcome::Retry) | Err(_) => {
+            Ok(Outcome::AwaitingPublication) => {
+                backoff = BACKOFF_START;
+                PUBLICATION_RETRY
+            }
+            Err(_) => {
                 let delay = with_jitter(backoff);
                 backoff = (backoff * 2).min(BACKOFF_MAX);
                 delay
