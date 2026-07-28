@@ -281,6 +281,19 @@ button svg {
   }
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .hint {
   font-size: 12px;
   color: var(--text-dim);
@@ -336,7 +349,20 @@ footer {
   padding: 2px 4px 8px;
 }
 
-footer .hint {
+footer .toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.hint {
   margin: 0;
   flex: 1;
 }

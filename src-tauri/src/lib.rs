@@ -14,6 +14,7 @@ use store::{Applied, Store};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
+use tauri_plugin_autostart::ManagerExt;
 use tokio::sync::Mutex;
 
 struct AppData {
@@ -48,9 +49,10 @@ struct UiState {
     status_message: Option<String>,
     last_check: Option<String>,
     current: Option<Applied>,
+    autostart: bool,
 }
 
-fn ui_state(d: &AppData) -> UiState {
+fn ui_state(d: &AppData, autostart: bool) -> UiState {
     UiState {
         mode: d.settings.mode,
         fit_mode: d.settings.fit_mode,
@@ -60,13 +62,21 @@ fn ui_state(d: &AppData) -> UiState {
         status_message: d.status_message.clone(),
         last_check: d.last_check.clone(),
         current: d.store.applied().cloned(),
+        autostart,
     }
 }
 
+/// Whether the app is registered to start at login. Reading it is a file or
+/// registry lookup, so it is only done when the panel state is built.
+fn autostart_enabled(app: &AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
 async fn current_ui(app: &AppHandle) -> UiState {
+    let autostart = autostart_enabled(app);
     let state = app.state::<SharedState>();
     let d = state.0.lock().await;
-    ui_state(&d)
+    ui_state(&d, autostart)
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -162,9 +172,8 @@ async fn refresh_ui(app: &AppHandle) {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-async fn get_state(state: tauri::State<'_, SharedState>) -> Result<UiState, String> {
-    let d = state.0.lock().await;
-    Ok(ui_state(&d))
+async fn get_state(app: AppHandle) -> Result<UiState, String> {
+    Ok(current_ui(&app).await)
 }
 
 #[tauri::command]
@@ -227,12 +236,25 @@ async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, Stri
 }
 
 #[tauri::command]
+async fn set_autostart(app: AppHandle, enabled: bool) -> Result<UiState, String> {
+    let manager = app.autolaunch();
+    let changed = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    changed.map_err(|e| format!("Could not change the login item: {e}"))?;
+    Ok(current_ui(&app).await)
+}
+
+#[tauri::command]
 async fn set_fit_mode(app: AppHandle, fit: FitMode) -> Result<UiState, String> {
     {
+        let autostart = autostart_enabled(&app);
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
         if d.settings.fit_mode == fit {
-            return Ok(ui_state(&d));
+            return Ok(ui_state(&d, autostart));
         }
         d.settings.fit_mode = fit;
         let path = d.settings_path.clone();
@@ -324,12 +346,17 @@ pub fn run() {
             show_panel(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             get_state,
             set_mode,
             set_specific_date,
             set_api_key,
             set_fit_mode,
+            set_autostart,
             refresh_now,
             quit_app
         ])

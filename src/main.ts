@@ -24,6 +24,7 @@ interface UiState {
   status_message: string | null;
   last_check: string | null;
   current: Applied | null;
+  autostart: boolean;
 }
 
 function el<T extends HTMLElement>(id: string): T {
@@ -162,6 +163,11 @@ function render(state: UiState): void {
     dateInput.value = state.specific_date;
   }
 
+  const autostart = el<HTMLInputElement>("autostart");
+  if (document.activeElement !== autostart) {
+    autostart.checked = state.autostart;
+  }
+
   const keyInput = el<HTMLInputElement>("api-key");
   if (document.activeElement !== keyInput) {
     keyInput.value = state.api_key;
@@ -228,6 +234,14 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   el<HTMLButtonElement>("fit-crop").addEventListener("click", () => {
     void run("set_fit_mode", { fit: "crop_fill" }, "Recomposing the wallpaper...");
+  });
+  el<HTMLInputElement>("autostart").addEventListener("change", (e) => {
+    const enabled = (e.target as HTMLInputElement).checked;
+    void run(
+      "set_autostart",
+      { enabled },
+      enabled ? "Enabling start at login..." : "Disabling start at login...",
+    );
   });
   el<HTMLButtonElement>("refresh").addEventListener("click", () => {
     void run("refresh_now", undefined, "Checking for the latest image...");

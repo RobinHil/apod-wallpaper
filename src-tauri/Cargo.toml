@@ -29,4 +29,5 @@ rand = "0.10.2"
 chrono = { version = "0.4.45", features = ["serde"] }
 wallpaper = "3.2.0"
 tauri-plugin-single-instance = "2.4.2"
+tauri-plugin-autostart = "2"
 
