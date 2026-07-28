@@ -340,6 +340,20 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Tauri's default runtime sizes itself to the machine: ten worker threads
+    // on a ten-core laptop, for an app that makes one HTTP request a day. Two
+    // is enough, and keeps the (blocking) wallpaper call from stalling a panel
+    // command. Image work runs on tokio's separate blocking pool, whose
+    // threads exit once idle. The runtime lives as long as `run()`, which
+    // returns only when the app exits.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_name("apod-worker")
+        .enable_all()
+        .build()
+        .expect("could not start the async runtime");
+    tauri::async_runtime::set(runtime.handle().clone());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Second launch: show the panel of the existing instance.
