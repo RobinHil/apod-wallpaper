@@ -58,13 +58,9 @@ impl Settings {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Could not create the configuration directory: {e}"))?;
-        }
         let raw = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Could not serialise settings: {e}"))?;
-        fs::write(path, raw).map_err(|e| format!("Could not write the settings file: {e}"))
+        crate::store::write_atomic(path, raw.as_bytes())
     }
 
     pub fn effective_api_key(&self) -> &str {

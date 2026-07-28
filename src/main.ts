@@ -5,28 +5,25 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 type Mode = "daily" | "random" | "specific";
 type FitMode = "blur_fill" | "crop_fill";
 
-interface CacheEntry {
+/** The wallpaper currently applied, as reported by the backend. */
+interface Applied {
   date: string;
   title: string;
   explanation: string;
   copyright: string | null;
   media_type: string;
   video_url: string | null;
-  source_url: string;
-  image_file: string;
-  fetched_at: string;
 }
 
 interface UiState {
   mode: Mode;
   fit_mode: FitMode;
   api_key: string;
-  using_demo_key: boolean;
   specific_date: string;
   offline: boolean;
   status_message: string | null;
   last_check: string | null;
-  current: CacheEntry | null;
+  current: Applied | null;
 }
 
 function el<T extends HTMLElement>(id: string): T {
