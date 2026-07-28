@@ -23,7 +23,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13.4", features = ["json", "query"] }
-tokio = { version = "1.52.3", features = ["time", "macros", "rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["sync", "time"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 rand = "0.10.2"
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -31,3 +31,11 @@ wallpaper = "3.2.0"
 tauri-plugin-single-instance = "2.4.2"
 tauri-plugin-autostart = "2"
 
+[profile.release]
+# A background utility: trade compile time for a smaller, faster binary.
+lto = "fat"
+codegen-units = 1
+strip = true
+# `panic = "abort"` is deliberately not set: image decoding runs inside a
+# spawn_blocking task, and a malformed file must surface as an error rather
+# than take the whole app down.
