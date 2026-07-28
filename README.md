@@ -56,20 +56,6 @@ Par plateforme :
 Note Linux : l'icone tray requiert un environnement qui prend en charge les
 `StatusNotifierItem`/AppIndicator (extension "AppIndicator" necessaire sous GNOME).
 
-### Hyprland / Waybar
-
-- **Tray** : le module `"tray"` de Waybar implemente StatusNotifierItem et
-  DBusMenu ; l'icone et son menu fonctionnent tels quels (ajoutez `"tray"` aux
-  modules de votre configuration Waybar si ce n'est pas deja fait).
-- **Fond d'ecran** : Hyprland est detecte automatiquement
-  (`HYPRLAND_INSTANCE_SIGNATURE`) et l'application pilote le daemon en place,
-  dans cet ordre : `swww` (si `swww query` repond), puis `hyprpaper` (via
-  `hyprctl hyprpaper`, ipc actif requis). L'un des deux doit tourner, par
-  exemple avec `exec-once = swww-daemon` dans `hyprland.conf`.
-- **Fenetre de reglages** : sous un compositeur tiling, le panneau s'ouvre
-  comme une fenetre normale ; pour le faire flotter :
-  `windowrulev2 = float, title:^(APOD Wallpaper)$`
-
 ## Installation et lancement en developpement
 
 ```bash
@@ -187,6 +173,11 @@ cache/
 - **Flou gaussien economique** : le fond est floute sur une version reduite (1/8) de
   l'image puis re-agrandi ; le rendu est equivalent a un flou prononce sur l'image
   pleine taille pour une fraction du cout CPU.
+- **Themes clair et sombre** : sur Windows, macOS et la quasi-totalite des
+  bureaux Linux, le fond d'ecran est unique et s'applique quel que soit le
+  theme actif. GNOME 42 et suivants sont la seule exception : le theme sombre
+  lit une cle distincte (`picture-uri-dark`), que l'application renseigne en
+  plus de `picture-uri` pour que l'image change aussi en mode sombre.
 - **Nom de fichier variable** : la composition finale inclut la date et le mode
   d'ajustement dans son nom de fichier, car certains bureaux (macOS notamment)
   mettent le fond d'ecran en cache par chemin et ignorent un fichier reecrit en place.
@@ -204,10 +195,15 @@ cache/
 ## Limitations connues
 
 - **Linux** : la definition du fond d'ecran depend de l'environnement de bureau.
-  Sont pris en charge : Hyprland (via swww ou hyprpaper, voir plus haut) et, via
-  la crate `wallpaper` : GNOME, KDE Plasma, XFCE, MATE, Cinnamon, Budgie, Deepin,
-  sway, i3 et autres gestionnaires compatibles `feh`. Sur un environnement non
-  reconnu, un message explicite est affiche dans le tray.
+  Sont pris en charge, via la crate `wallpaper` : GNOME et ses derives (Unity,
+  Budgie, Pantheon), KDE Plasma, XFCE, LXDE, MATE, Cinnamon, Deepin, et en
+  dernier recours tout compositeur ou `swaybg` (Wayland) ou `feh` (X11) est
+  installe. Sur un environnement non reconnu, un message explicite est affiche
+  dans le panneau. Les compositeurs sans bureau declare (Hyprland, sway, i3...)
+  passent par ce repli : chaque application d'image y relance `swaybg`, ce qui
+  peut entrer en conflit avec un daemon de fond d'ecran deja en place
+  (`swww`, `hyprpaper`) ; ces environnements ne sont pas pris en charge
+  officiellement.
 - **Multi-ecrans** : l'image est composee a la resolution de l'ecran principal ;
   les ecrans secondaires recoivent la meme image (le support d'une composition par
   ecran est une evolution possible).
