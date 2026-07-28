@@ -14,6 +14,10 @@ const APOD_START: (i32, u32, u32) = (1995, 6, 16);
 /// Re-draws allowed in random mode when a date lands on a day with no
 /// publication or no usable image.
 const MAX_RANDOM_ATTEMPTS: usize = 6;
+/// Size used on a first run when the platform reports no monitor. Whatever it
+/// composes gets replaced the moment a real screen shows up, since the size is
+/// part of what the updater compares.
+const ASSUMED_SCREEN: (u32, u32) = (1920, 1080);
 
 /// What the scheduler should do once an update returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +60,13 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
         (d.settings.clone(), d.store.applied().cloned())
     };
     let today = today_string();
-    let (width, height) = crate::screen_size(app);
+    // With no monitor to measure, the size the wallpaper was already composed
+    // for is the best answer available: it keeps the comparisons below from
+    // seeing a change that did not happen. Only a first run with nothing
+    // applied has to fall back to a guess.
+    let (width, height) = crate::screen_size(app)
+        .or_else(|| applied.as_ref().map(|a| (a.width, a.height)))
+        .unwrap_or(ASSUMED_SCREEN);
 
     // Nothing due: the image on disk already answers the current settings.
     if !force {

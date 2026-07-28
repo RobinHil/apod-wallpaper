@@ -250,6 +250,7 @@ apod-wallpaper/
 |  |  |- main.rs               # Binary entry point
 |  |  |- lib.rs                # Tauri setup: tray, panel window, commands
 |  |  |- scheduler.rs          # The only background task: when to update
+|  |  |- os_events.rs          # Screen-change and wake-from-sleep notifications
 |  |  |- updater.rs            # What an update does, end to end
 |  |  |- nasa_api.rs           # APOD API calls, parsing, error taxonomy
 |  |  |- store.rs              # state.json + the two image files, atomic writes
@@ -281,15 +282,30 @@ task, and it does this:
    minutes, until it succeeds. Then go back to step 2.
 
 Nothing else is armed. When the wallpaper is up to date, the process is
-sleeping on a single timer.
+sleeping on a single timer -- for the nine or so hours until the next midnight,
+not in periodic instalments.
 
-Sleeps are chunked to 30 minutes and the remaining time is recomputed from the
-wall clock on every wake. That is deliberately not a pure single-shot timer:
-a timer armed for the next midnight is stale after the machine suspends, and
-correcting it properly would mean wiring up wake, clock-change and
-timezone-change notifications on three platforms. Two wakes an hour, each doing
-a couple of string comparisons, cost far less than that -- both in CPU and in
-code.
+Two things can invalidate that sleep, and both arrive as OS notifications
+rather than being looked for:
+
+- **The screen changes.** A new resolution, a monitor plugged in or unplugged,
+  displays rearranged. The wallpaper is recomposed from the original already on
+  disk, within seconds and without touching the network.
+- **The machine wakes from sleep.** The timer is measured against a clock that
+  does not advance while suspended, so without this a sleep started before a
+  closed lid would fire hours after midnight.
+
+Each platform is served by the toolkit its Tauri backend already links, so none
+of this adds a crate to the build: `NSApplicationDidChangeScreenParameters` and
+`NSWorkspaceDidWake` on macOS, `GdkScreen` on Linux (which covers X11 and
+Wayland alike), `WM_DISPLAYCHANGE` and `WM_POWERBROADCAST` on Windows.
+
+Resume from suspend is the one gap: on Linux it would mean a D-Bus client for
+logind, a dependency and a connection held open for the life of the process to
+catch one signal. There the sleep is split into six-hour stretches instead.
+This does not make the daily update any later -- the remaining time is
+recomputed at every wake, so the last stretch still ends exactly at the day
+change -- it only bounds how long a suspended machine takes to catch up.
 
 The same reasoning applies to retries. Subscribing to NetworkManager,
 NWPathMonitor and the Windows connectivity APIs would be roughly 200 lines of
@@ -308,6 +324,11 @@ download, no wallpaper-set call. Restarting five times in a day costs five
 
 Changing the fit mode, or moving to a monitor with a different resolution,
 recomposes from the stored original without touching the network.
+
+When the platform reports no monitor at all -- lid closed, session locked --
+the size the wallpaper was last composed for is reused. That is not a
+resolution change, and recomposing for a guessed size would replace a correct
+wallpaper with a wrong one.
 
 ### Failures never break the desktop
 
@@ -379,7 +400,12 @@ app sets alongside `picture-uri` so the image changes in dark mode too.
   error shown in the panel; installing the Qt5 `qdbus` tool fixes it. This has
   not been verified on Plasma 6.
 - **Multiple monitors**: the image is composed at the primary screen's
-  resolution; secondary screens get the same image.
+  resolution; secondary screens get the same image. Plugging, unplugging or
+  resizing a screen is noticed and recomposed for; which screen counts as
+  primary is whatever the OS reports.
+- **Linux and suspend**: waking from suspend is not reported (it would take a
+  D-Bus client for logind), so an update due while the machine was asleep
+  happens within six hours of the machine coming back rather than immediately.
 - **macOS**: setting the wallpaper goes through an AppleScript event, which
   requires the Automation permission described in the install section.
 - **Unsigned builds**: see the install section for the Gatekeeper and

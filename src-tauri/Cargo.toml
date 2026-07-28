@@ -32,6 +32,22 @@ wallpaper = "3.2.0"
 tauri-plugin-single-instance = "2.4.2"
 tauri-plugin-autostart = "2"
 
+# Watching for screen changes and resumes from sleep, so the scheduler can wait
+# on events instead of waking up to look for them (see `os_events`). Every
+# crate below is already compiled as part of Tauri's backend for that platform,
+# so naming it here adds nothing to the build.
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSNotification", "NSOperation", "NSString"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gdk = "0.18"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Power", "Win32_UI_WindowsAndMessaging"] }
+
 [profile.release]
 # A background utility: trade compile time for a smaller, faster binary.
 lto = "fat"

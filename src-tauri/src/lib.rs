@@ -1,5 +1,6 @@
 mod image_compose;
 mod nasa_api;
+mod os_events;
 mod scheduler;
 mod settings;
 mod store;
@@ -90,14 +91,15 @@ fn truncate(s: &str, max: usize) -> String {
 
 /// Physical resolution of the primary monitor; other monitors get the same
 /// image (documented limitation in the README).
-fn screen_size(app: &AppHandle) -> (u32, u32) {
-    match app.primary_monitor() {
-        Ok(Some(monitor)) => {
-            let size = monitor.size();
-            (size.width.max(640), size.height.max(400))
-        }
-        _ => (1920, 1080),
-    }
+///
+/// `None` when the platform reports no monitor at all, which happens with the
+/// lid closed or the session locked. That is not a resolution change, and the
+/// caller must not treat it as one: recomposing for a guessed size would
+/// replace a correct wallpaper with a wrong one.
+fn screen_size(app: &AppHandle) -> Option<(u32, u32)> {
+    let monitor = app.primary_monitor().ok()??;
+    let size = monitor.size();
+    Some((size.width.max(640), size.height.max(400)))
 }
 
 /// Label of the settings panel window, matching `capabilities/default.json`.
@@ -397,8 +399,14 @@ pub fn run() {
 
             build_tray(app)?;
 
+            // Screen changes and resumes from sleep reach the scheduler
+            // through this, which is why it can sleep to the next day change
+            // instead of waking up to look for them.
+            let wakeup: os_events::Wakeup = Arc::new(tokio::sync::Notify::new());
+            os_events::watch(&wakeup);
+
             // The one and only background task.
-            tauri::async_runtime::spawn(scheduler::run(app.handle().clone()));
+            tauri::async_runtime::spawn(scheduler::run(app.handle().clone(), wakeup));
 
             Ok(())
         })

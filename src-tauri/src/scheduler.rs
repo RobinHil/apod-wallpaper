@@ -1,14 +1,24 @@
+use crate::os_events::Wakeup;
 use crate::updater::{self, Outcome};
 use chrono::Local;
 use std::time::Duration;
 use tauri::AppHandle;
 
-/// Longest single sleep. Each wake recomputes the remaining time from the wall
-/// clock, so a suspended machine, a clock adjustment or a time-zone change
-/// corrects itself within one chunk. That costs two wakes an hour, each a
-/// handful of string comparisons, and saves three platform-specific power and
-/// clock notification backends.
-const MAX_SLEEP: Duration = Duration::from_secs(30 * 60);
+/// Longest single sleep.
+///
+/// The sleep is measured against a clock that does not advance while the
+/// machine is suspended, so a night with the lid closed would push the day
+/// change hours late. macOS and Windows say when they wake up (see
+/// `os_events`), so there the sleep runs to the next day change and the
+/// process is idle until then.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const MAX_SLEEP: Duration = Duration::from_secs(25 * 3600);
+/// On Linux nothing reports the resume, short of a D-Bus client for logind, so
+/// the sleep is split and the wall clock re-read a few times a day. This does
+/// not make the daily update any later: the remaining time is recomputed at
+/// every wake, so the last stretch still ends exactly at the day change.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const MAX_SLEEP: Duration = Duration::from_secs(6 * 3600);
 /// Interval used while waiting for today's APOD to be published. Deliberately
 /// unhurried: this is not a failure, and polling the API every 15 minutes from
 /// local midnight until publication would burn most of DEMO_KEY's 50 daily
@@ -19,19 +29,29 @@ const PUBLICATION_RETRY: Duration = Duration::from_secs(30 * 60);
 const BACKOFF_START: Duration = Duration::from_secs(10);
 /// Ceiling for the retry delay.
 const BACKOFF_MAX: Duration = Duration::from_secs(15 * 60);
+/// Pause after an OS event before acting on it. Unplugging a monitor or
+/// changing a resolution emits a burst of notifications, one per step of the
+/// transition; waiting collapses them into a single recomposition and lets the
+/// new mode settle before the screen is measured.
+const SETTLE: Duration = Duration::from_secs(3);
+/// Fallback when the next local midnight does not exist, which a DST jump can
+/// arrange. An hour later the gap has been crossed.
+const DST_GAP_RETRY: Duration = Duration::from_secs(3600);
 
 /// The app's only background task.
 ///
-/// It attempts an update, then sleeps until the next local day change. Nothing
-/// is armed while everything is up to date, beyond that single sleep: there is
-/// no polling of the API and no periodic wallpaper reapplication.
+/// It attempts an update, then sleeps until the next local day change or until
+/// the OS reports something that invalidates the wallpaper -- a new screen
+/// resolution, a machine waking up. Nothing else is armed: no polling of the
+/// API, no periodic reapplication, no timer that exists only to check whether
+/// anything has happened.
 ///
-/// A failed attempt (offline, API outage) switches to an exponential backoff
-/// with jitter, capped at 15 minutes, which stops as soon as an attempt
-/// succeeds. A failed connection with no network returns locally in about a
-/// millisecond, so retrying costs far less than keeping a
-/// connectivity-monitoring subsystem resident.
-pub async fn run(app: AppHandle) {
+/// Retrying is therefore reserved for what actually failed. An attempt that
+/// fails (offline, API outage) switches to an exponential backoff with jitter,
+/// capped at 15 minutes, which stops as soon as one succeeds. A connection
+/// attempt with no network returns locally in about a millisecond, so retrying
+/// costs far less than keeping a connectivity-monitoring subsystem resident.
+pub async fn run(app: AppHandle, wakeup: Wakeup) {
     let mut backoff = BACKOFF_START;
     loop {
         let wait = match updater::update(&app, false).await {
@@ -49,7 +69,14 @@ pub async fn run(app: AppHandle) {
                 delay
             }
         };
-        tokio::time::sleep(wait.min(MAX_SLEEP)).await;
+
+        // Waits for the deadline, unless an OS event cuts the wait short.
+        let interrupted = tokio::time::timeout(wait.min(MAX_SLEEP), wakeup.notified())
+            .await
+            .is_ok();
+        if interrupted {
+            tokio::time::sleep(SETTLE).await;
+        }
     }
 }
 
@@ -63,11 +90,10 @@ fn until_next_day_change() -> Duration {
         // over by the time we look at it.
         .and_then(|tomorrow| tomorrow.and_hms_opt(0, 0, 5))
         // `earliest()` resolves the ambiguity when a DST change makes local
-        // midnight happen twice; `None` when it does not exist at all, in
-        // which case the caller's cap takes over.
+        // midnight happen twice; `None` when it does not exist at all.
         .and_then(|naive| naive.and_local_timezone(Local).earliest())
         .and_then(|next| (next - now).to_std().ok())
-        .unwrap_or(MAX_SLEEP)
+        .unwrap_or(DST_GAP_RETRY)
 }
 
 /// Spreads retries by +/-20% so several machines that lost the same network do
@@ -85,6 +111,21 @@ mod tests {
     fn day_change_is_always_within_a_day() {
         let wait = until_next_day_change();
         assert!(wait <= Duration::from_secs(24 * 3600 + 5));
+    }
+
+    #[test]
+    fn the_sleep_cap_never_delays_the_day_change() {
+        // Whether the sleep is split or not, the last stretch is the exact
+        // remainder to just past midnight, so the cap only ever bounds how
+        // long a suspended machine takes to notice. This guards the day the
+        // cap is lowered below the longest possible wait without splitting the
+        // update off the day change.
+        let longest_possible_wait = Duration::from_secs(24 * 3600 + 5);
+        assert!(
+            MAX_SLEEP >= longest_possible_wait
+                || cfg!(not(any(target_os = "macos", target_os = "windows"))),
+            "a capped sleep is only acceptable where the OS reports no resume"
+        );
     }
 
     #[test]

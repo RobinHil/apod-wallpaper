@@ -51,8 +51,12 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 name = "apod-wallpaper"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "chrono",
+ "gdk",
  "image",
+ "objc2-app-kit",
+ "objc2-foundation",
  "rand",
  "reqwest",
  "serde",
@@ -64,6 +68,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "wallpaper",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
