@@ -99,7 +99,14 @@ fn youtube_maxres(url: &str) -> Option<String> {
     let (head, tail) = url.rsplit_once('/')?;
     let name = tail.strip_suffix(".jpg")?;
     const VARIANTS: [&str; 8] = [
-        "0", "1", "2", "3", "default", "mqdefault", "hqdefault", "sddefault",
+        "0",
+        "1",
+        "2",
+        "3",
+        "default",
+        "mqdefault",
+        "hqdefault",
+        "sddefault",
     ];
     if VARIANTS.contains(&name) {
         Some(format!("{head}/maxresdefault.jpg"))

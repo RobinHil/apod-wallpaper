@@ -155,5 +155,3 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         format!("Could not replace {}: {e}", path.display())
     })
 }
-
-
