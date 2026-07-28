@@ -205,12 +205,8 @@ button {
   gap: 7px;
 }
 
-button:hover:not(:disabled) {
+button:hover {
   border-color: var(--accent);
-}
-
-button:disabled {
-  opacity: 0.55;
 }
 
 button svg {
@@ -244,7 +240,7 @@ button svg {
   margin-right: 0;
 }
 
-.segmented button:hover:not(:disabled),
+.segmented button:hover,
 .segmented button.active {
   z-index: 1;
 }
@@ -264,12 +260,8 @@ button svg {
   font-weight: 600;
 }
 
-.primary:hover:not(:disabled) {
+.primary:hover {
   filter: brightness(1.08);
-}
-
-.primary.busy svg {
-  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
@@ -337,7 +329,7 @@ button svg {
   font-size: 12px;
 }
 
-.link-btn:hover:not(:disabled) {
+.link-btn:hover {
   text-decoration: underline;
 }
 
@@ -375,7 +367,7 @@ footer .toggle {
   flex-shrink: 0;
 }
 
-.quit-btn:hover:not(:disabled) {
+.quit-btn:hover {
   color: #c4423f;
 }
 

@@ -1,8 +1,9 @@
 [package]
 name = "apod-wallpaper"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Sets NASA's Astronomy Picture of the Day as your desktop wallpaper"
+authors = ["Robin HILAIRE"]
+repository = "https://github.com/RobinHil/apod-wallpaper"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

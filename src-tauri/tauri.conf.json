@@ -10,15 +10,19 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Utility",
+    "shortDescription": "NASA Astronomy Picture of the Day as your wallpaper",
+    "longDescription": "A tray application that sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day. Also supports a random pick from the archive and any specific date since 16 June 1995.",
+    "copyright": "Copyright (c) 2026 Robin HILAIRE. APOD images with a copyright notice remain the property of their authors.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

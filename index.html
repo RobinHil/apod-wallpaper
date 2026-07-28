@@ -65,7 +65,7 @@
         <section class="card">
           <h2>Mode</h2>
           <div class="segmented" role="group" aria-label="Image selection mode">
-            <button id="mode-daily" type="button">
+            <button id="mode-daily" type="button" aria-pressed="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                 <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -74,7 +74,7 @@
               </svg>
               Picture of the day
             </button>
-            <button id="mode-random" type="button">
+            <button id="mode-random" type="button" aria-pressed="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polyline points="16 3 21 3 21 8"></polyline>
                 <line x1="4" y1="20" x2="21" y2="3"></line>
@@ -84,7 +84,7 @@
               </svg>
               Random
             </button>
-            <button id="mode-specific" type="button">
+            <button id="mode-specific" type="button" aria-pressed="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                 <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -110,8 +110,8 @@
 
           <h2>Screen fit</h2>
           <div class="segmented" role="group" aria-label="Image fit">
-            <button id="fit-blur" type="button">Blurred fill</button>
-            <button id="fit-crop" type="button">Crop</button>
+            <button id="fit-blur" type="button" aria-pressed="false">Blurred fill</button>
+            <button id="fit-crop" type="button" aria-pressed="false">Crop</button>
           </div>
 
           <h2>Startup</h2>

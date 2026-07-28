@@ -151,11 +151,11 @@ function render(state: UiState): void {
     videoNotice.hidden = true;
   }
 
-  el<HTMLButtonElement>("mode-daily").classList.toggle("active", state.mode === "daily");
-  el<HTMLButtonElement>("mode-random").classList.toggle("active", state.mode === "random");
-  el<HTMLButtonElement>("mode-specific").classList.toggle("active", state.mode === "specific");
-  el<HTMLButtonElement>("fit-blur").classList.toggle("active", state.fit_mode === "blur_fill");
-  el<HTMLButtonElement>("fit-crop").classList.toggle("active", state.fit_mode === "crop_fill");
+  setToggle("mode-daily", state.mode === "daily");
+  setToggle("mode-random", state.mode === "random");
+  setToggle("mode-specific", state.mode === "specific");
+  setToggle("fit-blur", state.fit_mode === "blur_fill");
+  setToggle("fit-crop", state.fit_mode === "crop_fill");
 
   el<HTMLDivElement>("date-picker").hidden = state.mode !== "specific" && !datePickerRequested;
   const dateInput = el<HTMLInputElement>("specific-date");
@@ -177,6 +177,13 @@ function render(state: UiState): void {
   if (state.status_message) parts.push(state.status_message);
   if (state.last_check) parts.push(`Last check: ${state.last_check}`);
   el<HTMLSpanElement>("last-check").textContent = parts.join(" - ");
+}
+
+/** Reflects a segmented-button selection visually and to assistive tech. */
+function setToggle(id: string, active: boolean): void {
+  const button = el<HTMLButtonElement>(id);
+  button.classList.toggle("active", active);
+  button.setAttribute("aria-pressed", String(active));
 }
 
 async function refreshState(): Promise<void> {
