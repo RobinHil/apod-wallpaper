@@ -373,6 +373,11 @@ app sets alongside `picture-uri` so the image changes in dark mode too.
   fallback: each application relaunches `swaybg`, which can conflict with a
   wallpaper daemon already in place (`swww`, `hyprpaper`); those environments
   are not officially supported.
+- **KDE Plasma**: the wallpaper is set by evaluating a script through
+  `qdbus`. Some Qt6-only distributions ship that binary as `qdbus6` with no
+  `qdbus` alias, in which case setting the wallpaper fails with the explicit
+  error shown in the panel; installing the Qt5 `qdbus` tool fixes it. This has
+  not been verified on Plasma 6.
 - **Multiple monitors**: the image is composed at the primary screen's
   resolution; secondary screens get the same image.
 - **macOS**: setting the wallpaper goes through an AppleScript event, which
