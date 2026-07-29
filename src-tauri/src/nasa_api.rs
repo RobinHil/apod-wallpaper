@@ -1,8 +1,27 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::time::Duration;
 
 const ENDPOINT: &str = "https://api.nasa.gov/planetary/apod";
+
+/// Deadline for the metadata request. Much shorter than the client-wide
+/// timeout, which exists for image downloads: this one request is a couple of
+/// kilobytes, and every panel action waits behind it.
+const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Ceiling on a downloaded image. The largest APOD originals sit an order of
+/// magnitude below this; the cap only exists so a misbehaving endpoint cannot
+/// make the app buffer an unbounded body in memory.
+const MAX_IMAGE_BYTES: usize = 128 * 1024 * 1024;
+
+/// reqwest appends `" for url (...)"` to most of its error messages, and our
+/// request URL carries the user's API key as a query parameter. Every error
+/// here ends up in the panel, so the URL is stripped before the message is
+/// ever read.
+fn network(e: reqwest::Error) -> ApiError {
+    ApiError::Network(e.without_url().to_string())
+}
 
 /// APOD API response. `copyright` is absent for public-domain images produced
 /// by NASA; when present it must be preserved and shown everywhere (store,
@@ -117,7 +136,7 @@ fn youtube_maxres(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::youtube_maxres;
+    use super::*;
 
     #[test]
     fn upgrades_standard_youtube_thumbnails() {
@@ -143,6 +162,42 @@ mod tests {
             None
         );
     }
+
+    /// Port 1 on the loopback: nothing listens there, so both requests below
+    /// fail locally and immediately, and reqwest attaches the request URL --
+    /// query string included -- to the error it hands back.
+    const REFUSED: &str = "http://127.0.0.1:1";
+
+    #[tokio::test]
+    async fn api_errors_never_carry_the_api_key() {
+        let client = reqwest::Client::new();
+        let error = fetch_apod_from(
+            &client,
+            &format!("{REFUSED}/planetary/apod"),
+            "SECRET-KEY",
+            None,
+        )
+        .await
+        .expect_err("a refused connection must produce an error");
+
+        let message = error.to_string();
+        assert!(!message.contains("SECRET-KEY"), "leaked the key: {message}");
+        assert!(
+            !message.contains("api_key"),
+            "leaked the query string: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_errors_never_carry_the_url() {
+        let client = reqwest::Client::new();
+        let error = download_image(&client, &format!("{REFUSED}/i.jpg?token=SECRET-TOKEN"))
+            .await
+            .expect_err("a refused connection must produce an error");
+
+        let message = error.to_string();
+        assert!(!message.contains("SECRET-TOKEN"), "leaked: {message}");
+    }
 }
 
 #[derive(Debug)]
@@ -157,6 +212,8 @@ pub enum ApiError {
     Http(u16),
     /// Unreadable response.
     Parse(String),
+    /// Body beyond what we are willing to buffer.
+    TooLarge,
 }
 
 impl ApiError {
@@ -184,6 +241,11 @@ impl fmt::Display for ApiError {
             ),
             ApiError::Http(code) => write!(f, "HTTP error {code} from the NASA API."),
             ApiError::Parse(e) => write!(f, "Unreadable API response: {e}"),
+            ApiError::TooLarge => write!(
+                f,
+                "The image is larger than {} MB and was not downloaded.",
+                MAX_IMAGE_BYTES / (1024 * 1024)
+            ),
         }
     }
 }
@@ -196,26 +258,35 @@ pub async fn fetch_apod(
     api_key: &str,
     date: Option<NaiveDate>,
 ) -> Result<Apod, ApiError> {
+    fetch_apod_from(client, ENDPOINT, api_key, date).await
+}
+
+/// The body of [`fetch_apod`], with the endpoint injected so the tests can
+/// point it at an address that fails and inspect the resulting message.
+async fn fetch_apod_from(
+    client: &reqwest::Client,
+    endpoint: &str,
+    api_key: &str,
+    date: Option<NaiveDate>,
+) -> Result<Apod, ApiError> {
     // thumbs=true asks the API to include video thumbnails, the only usable
     // wallpaper representation of a video (no video file is served).
     let mut request = client
-        .get(ENDPOINT)
+        .get(endpoint)
+        .timeout(METADATA_TIMEOUT)
         .query(&[("api_key", api_key), ("thumbs", "true")]);
     if let Some(d) = date {
         request = request.query(&[("date", d.format("%Y-%m-%d").to_string())]);
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|e| ApiError::Network(e.to_string()))?;
+    let response = request.send().await.map_err(network)?;
 
     match response.status().as_u16() {
         200 => response
             .json::<Apod>()
             .await
             .map(Apod::normalize)
-            .map_err(|e| ApiError::Parse(e.to_string())),
+            .map_err(|e| ApiError::Parse(e.without_url().to_string())),
         429 => Err(ApiError::RateLimited),
         // The API answers 404 or 400 for dates with no publication.
         400 | 404 => Err(ApiError::NotFound),
@@ -223,22 +294,31 @@ pub async fn fetch_apod(
     }
 }
 
-/// Downloads the raw bytes of an image.
+/// Downloads the raw bytes of an image, refusing a body over
+/// [`MAX_IMAGE_BYTES`]. The body is read chunk by chunk rather than in one
+/// call so an endpoint that lies about (or omits) its content length still
+/// cannot grow the buffer without bound.
 pub async fn download_image(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, ApiError> {
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| ApiError::Network(e.to_string()))?;
+    let mut response = client.get(url).send().await.map_err(network)?;
 
     let status = response.status();
     if !status.is_success() {
         return Err(ApiError::Http(status.as_u16()));
     }
 
-    response
-        .bytes()
-        .await
-        .map(|b| b.to_vec())
-        .map_err(|e| ApiError::Network(e.to_string()))
+    let declared = response.content_length();
+    if declared.is_some_and(|n| n > MAX_IMAGE_BYTES as u64) {
+        return Err(ApiError::TooLarge);
+    }
+
+    // Trust the declared length only as an allocation hint, and only up to a
+    // size worth reserving up front.
+    let mut bytes = Vec::with_capacity(declared.unwrap_or(0).min(16 * 1024 * 1024) as usize);
+    while let Some(chunk) = response.chunk().await.map_err(network)? {
+        if bytes.len() + chunk.len() > MAX_IMAGE_BYTES {
+            return Err(ApiError::TooLarge);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }

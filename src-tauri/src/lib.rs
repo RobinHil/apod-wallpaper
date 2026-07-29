@@ -178,6 +178,12 @@ async fn get_state(app: AppHandle) -> Result<UiState, String> {
     Ok(current_ui(&app).await)
 }
 
+/// Switches mode and applies it.
+///
+/// The new mode is persisted before the update runs and is *not* rolled back
+/// if it fails: a mode is a standing preference, so a network outage should
+/// leave the app aiming at what the user asked for and let the scheduler retry.
+/// `set_specific_date` deliberately does the opposite -- see there.
 #[tauri::command]
 async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
     let changed = {
@@ -196,7 +202,10 @@ async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
         }
         changed
     };
-    if changed {
+    // Random is the one mode that is not idempotent: asking for it again means
+    // "draw another one", so it updates even when the mode did not change.
+    // Doing nothing there would leave the button visibly dead.
+    if changed || mode == Mode::Random {
         updater::update(&app, true).await?;
     }
     Ok(current_ui(&app).await)
@@ -220,6 +229,10 @@ async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, Stri
         // Day with no publication, network outage...: restore the previous
         // mode so the displayed state stays truthful. The current wallpaper
         // was not touched and the error is shown to the user.
+        //
+        // Unlike `set_mode`, this does roll back: a date the archive has no
+        // entry for is wrong permanently, and retrying it forever would pin
+        // the app to a request that can never succeed.
         {
             let state = app.state::<SharedState>();
             let mut d = state.0.lock().await;
@@ -268,16 +281,29 @@ async fn set_fit_mode(app: AppHandle, fit: FitMode) -> Result<UiState, String> {
     Ok(current_ui(&app).await)
 }
 
+/// Saves the key and immediately puts it to use.
+///
+/// The whole point of typing a key is usually that DEMO_KEY's quota ran out,
+/// so saving it and then sitting on the failed state until the next backoff
+/// tick would answer the user's problem with a shrug. A failure here leaves
+/// the key saved -- it is what the user asked for -- and reports the error.
 #[tauri::command]
 async fn set_api_key(app: AppHandle, key: String) -> Result<UiState, String> {
-    {
+    let changed = {
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
-        d.settings.api_key = key.trim().to_string();
-        let path = d.settings_path.clone();
-        d.settings.save(&path)?;
+        let key = key.trim().to_string();
+        let changed = d.settings.api_key != key;
+        if changed {
+            d.settings.api_key = key;
+            let path = d.settings_path.clone();
+            d.settings.save(&path)?;
+        }
+        changed
+    };
+    if changed {
+        updater::update(&app, true).await?;
     }
-    refresh_ui(&app).await;
     Ok(current_ui(&app).await)
 }
 
@@ -344,10 +370,10 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 pub fn run() {
     // Tauri's default runtime sizes itself to the machine: ten worker threads
     // on a ten-core laptop, for an app that makes one HTTP request a day. Two
-    // is enough, and keeps the (blocking) wallpaper call from stalling a panel
-    // command. Image work runs on tokio's separate blocking pool, whose
-    // threads exit once idle. The runtime lives as long as `run()`, which
-    // returns only when the app exits.
+    // is enough. Nothing blocking runs on these threads -- image work and the
+    // wallpaper call both go to tokio's separate blocking pool, whose threads
+    // exit once idle -- so they only ever shuttle futures along. The runtime
+    // lives as long as `run()`, which returns only when the app exits.
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .thread_name("apod-worker")
@@ -383,9 +409,21 @@ pub fn run() {
 
             let data_dir = app.path().app_data_dir()?;
             let settings_path = data_dir.join("settings.json");
+            // Nothing persisted yet: this is the first launch. Worth knowing,
+            // because a tray application that starts silently is invisible --
+            // and on a GNOME desktop without the AppIndicator extension, there
+            // is not even a tray icon to find.
+            let first_run = !settings_path.exists();
             let settings = Settings::load(&settings_path);
             let store = Store::load(&data_dir);
             store.ensure_dir().map_err(std::io::Error::other)?;
+
+            // Settings are otherwise only written when one of them changes, so
+            // without this the file would stay missing for a user who never
+            // touches a setting -- and every launch would look like the first.
+            if first_run {
+                let _ = settings.save(&settings_path);
+            }
 
             app.manage(UpdateLock(Mutex::new(())));
             app.manage(SharedState(Arc::new(Mutex::new(AppData {
@@ -407,6 +445,13 @@ pub fn run() {
 
             // The one and only background task.
             tauri::async_runtime::spawn(scheduler::run(app.handle().clone(), wakeup));
+
+            // Show the panel once, on the very first launch, so the app is not
+            // a process the user has no evidence of. Every later start goes
+            // straight to the tray.
+            if first_run {
+                show_panel(app.handle());
+            }
 
             Ok(())
         })

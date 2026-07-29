@@ -163,10 +163,11 @@ function render(state: UiState): void {
     dateInput.value = state.specific_date;
   }
 
-  const autostart = el<HTMLInputElement>("autostart");
-  if (document.activeElement !== autostart) {
-    autostart.checked = state.autostart;
-  }
+  // No focus guard here, unlike the text fields below: a checkbox holds no
+  // half-finished input worth protecting, and skipping the write would leave
+  // the box showing a state the backend just refused -- it still has focus
+  // from the click that failed.
+  el<HTMLInputElement>("autostart").checked = state.autostart;
 
   const keyInput = el<HTMLInputElement>("api-key");
   if (document.activeElement !== keyInput) {
@@ -205,6 +206,13 @@ window.addEventListener("DOMContentLoaded", () => {
   // while an action is running, so the blocking overlay is not disturbed.
   void listen<UiState>("state-updated", (event) => {
     if (!pending) render(event.payload);
+  });
+
+  // The action we just asked for is queued behind an update already running --
+  // the scheduler's, usually. It can take as long as a download does, so the
+  // overlay says what it is waiting on rather than sitting there mute.
+  void listen("update-waiting", () => {
+    if (pending) setBlocked(true, "Waiting for the update in progress...");
   });
 
   // Upper bound of the picker: today (local time).

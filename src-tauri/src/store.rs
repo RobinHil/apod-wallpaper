@@ -1,6 +1,7 @@
 use crate::settings::FitMode;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Record of the wallpaper currently applied, persisted in `state.json`.
@@ -136,6 +137,11 @@ impl Store {
 /// Writes a file by way of a temporary file in the same directory followed by
 /// a rename, so a crash or a full disk can never leave a half-written file
 /// behind. `fs::rename` replaces the destination on all supported platforms.
+///
+/// The temporary file is flushed to the device before the rename, and the
+/// directory after it. Without the first, a power loss can leave the rename
+/// visible with an empty file under it -- the rename is ordered, its contents
+/// are not; without the second, the rename itself can be lost.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
@@ -149,9 +155,39 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .ok_or_else(|| format!("Invalid file name: {}", path.display()))?;
     let tmp = parent.join(format!(".{file_name}.tmp"));
 
-    fs::write(&tmp, bytes).map_err(|e| format!("Could not write {}: {e}", tmp.display()))?;
+    let written = (|| -> std::io::Result<()> {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("Could not write {}: {e}", tmp.display()));
+    }
+
     fs::rename(&tmp, path).map_err(|e| {
         let _ = fs::remove_file(&tmp);
         format!("Could not replace {}: {e}", path.display())
-    })
+    })?;
+    sync_dir(parent);
+    Ok(())
+}
+
+/// Flushes a directory entry, so a rename performed in it survives a power
+/// loss and not merely a process crash.
+///
+/// Best effort by design: a failure here costs durability, never correctness,
+/// and there is nothing useful to tell the user about it. Unix only -- Windows
+/// does not let a directory be opened as a file, and its rename is journalled.
+pub fn sync_dir(dir: &Path) {
+    #[cfg(unix)]
+    {
+        if let Ok(handle) = fs::File::open(dir) {
+            let _ = handle.sync_all();
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+    }
 }

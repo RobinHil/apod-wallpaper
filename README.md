@@ -12,7 +12,7 @@ TypeScript/HTML/CSS settings panel. No JS framework, no superfluous dependency.
 - **Picture of the day**: fetches the current APOD through the NASA API and
   applies it as the wallpaper.
 - **Random mode**: draws a date at random from the whole APOD archive (since
-  16 June 1995).
+  16 June 1995). Clicking "Random" again draws another one straight away.
 - **Specific date mode**: shows the APOD for a date you pick, bounded between
   16 June 1995 (the first APOD) and today.
 - **Once a day, then nothing**: the wallpaper is updated at startup and at the
@@ -34,7 +34,10 @@ TypeScript/HTML/CSS settings panel. No JS framework, no superfluous dependency.
   wallpaper in place is left untouched and the app retries with a backoff until
   it succeeds. The offline state is shown in the tray and the panel.
 - **Configurable API key**: `DEMO_KEY` by default, personal key saved from the
-  panel (stored locally).
+  panel (stored locally) and put to use immediately -- saving a key retries the
+  update that the exhausted quota had just failed.
+- **Visible on first launch**: the panel opens by itself the first time the app
+  runs, then never again; afterwards it lives in the tray.
 
 ## Installing a release build
 

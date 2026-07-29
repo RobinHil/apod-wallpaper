@@ -83,9 +83,30 @@ mod gnome {
                 "set",
                 "org.gnome.desktop.background",
                 "picture-uri-dark",
-                &gvariant_string(&format!("file://{path}")),
+                &gvariant_string(&file_uri(path)),
             ])
             .status();
+    }
+
+    /// Builds a `file://` URI from a filesystem path.
+    ///
+    /// GLib parses the value as a URI, so anything outside the unreserved set
+    /// has to be percent-encoded: a space (a user name with a space in it), a
+    /// `#` (everything after it would be read as a fragment), a `?`, or any
+    /// non-ASCII byte. Encoding is done byte by byte, which is what a URI
+    /// wants and what keeps a non-UTF-8-looking path intact.
+    fn file_uri(path: &str) -> String {
+        // `/` stays literal: it is the path separator in the URI too.
+        const KEPT: &[u8] = b"-._~/";
+        let mut uri = String::from("file://");
+        for byte in path.as_bytes() {
+            if byte.is_ascii_alphanumeric() || KEPT.contains(byte) {
+                uri.push(*byte as char);
+            } else {
+                uri.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        uri
     }
 
     /// Mirrors the condition in `wallpaper::linux::gnome::is_compliant`: only
@@ -105,7 +126,7 @@ mod gnome {
 
     #[cfg(test)]
     mod tests {
-        use super::{gvariant_string, uses_gnome_schema};
+        use super::{file_uri, gvariant_string, uses_gnome_schema};
 
         #[test]
         fn detects_gnome_family_desktops() {
@@ -124,9 +145,24 @@ mod gnome {
                 "\"file:///home/rh/wall-2026-07-28-blur.jpg\""
             );
             assert_eq!(
-                gvariant_string("file:///home/jean dupont/a\"b.jpg"),
-                "\"file:///home/jean dupont/a\\\"b.jpg\""
+                gvariant_string("file:///home/jean%20dupont/a\"b.jpg"),
+                "\"file:///home/jean%20dupont/a\\\"b.jpg\""
             );
+        }
+
+        #[test]
+        fn percent_encodes_everything_a_uri_cannot_carry() {
+            assert_eq!(
+                file_uri("/home/rh/.local/share/wall-2026-07-28-blur-3456x2234.jpg"),
+                "file:///home/rh/.local/share/wall-2026-07-28-blur-3456x2234.jpg"
+            );
+            // A space, and a `#` that would otherwise start a fragment.
+            assert_eq!(
+                file_uri("/home/jean dupont/n#1.jpg"),
+                "file:///home/jean%20dupont/n%231.jpg"
+            );
+            // Non-ASCII is encoded per UTF-8 byte, not per character.
+            assert_eq!(file_uri("/home/josé/a.jpg"), "file:///home/jos%C3%A9/a.jpg");
         }
     }
 }

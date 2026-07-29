@@ -2,19 +2,31 @@ use crate::settings::FitMode;
 use image::imageops::FilterType;
 use image::{DynamicImage, RgbImage};
 use std::fs;
-use std::io::BufWriter;
+use std::io::{BufWriter, Cursor, Write};
 use std::path::Path;
 
 /// Decodes an image file, determining the format from its contents rather than
-/// from its file name. `image::open` trusts the extension alone, which fails
-/// outright for the extension-less temporary file a download lands in, and
-/// trusts the server's naming everywhere else. Decoding is also what validates
-/// a fresh download.
+/// from its file name. `image::open` trusts the extension alone, and so trusts
+/// whatever the server happened to call the file. Every decode in this app
+/// goes through here or through [`decode_bytes`].
 pub fn decode(path: &Path) -> Result<DynamicImage, String> {
     image::ImageReader::open(path)
         .map_err(|e| format!("Could not open the image file: {e}"))?
         .with_guessed_format()
         .map_err(|e| format!("Could not read the image file: {e}"))?
+        .decode()
+        .map_err(|e| format!("Not a usable image: {e}"))
+}
+
+/// Decodes a payload still in memory, sniffing the format the same way
+/// [`decode`] does. This is what validates a fresh download: a truncated
+/// transfer, a non-image body, or an original too large for the decoder's
+/// allocation limit all fail here -- before anything has been written to disk,
+/// so the caller is still free to fall back to another URL.
+pub fn decode_bytes(bytes: &[u8]) -> Result<DynamicImage, String> {
+    image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("Could not read the downloaded image: {e}"))?
         .decode()
         .map_err(|e| format!("Not a usable image: {e}"))
 }
@@ -91,6 +103,10 @@ fn darken(img: &mut RgbImage, factor: f32) {
 /// The buffer is already RGB, so it is handed to the encoder as is. Composing
 /// in RGBA used to force a full-size clone plus a conversion here, two extra
 /// screen-sized buffers for an alpha channel a wallpaper cannot use.
+///
+/// The bytes reach the disk before this returns: the caller renames the file
+/// into place straight afterwards, and a rename that outlives its own contents
+/// would leave an empty wallpaper behind after a power loss.
 pub fn save_jpeg(img: &RgbImage, path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -101,7 +117,15 @@ pub fn save_jpeg(img: &RgbImage, path: &Path) -> Result<(), String> {
     let mut writer = BufWriter::new(file);
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 92);
     img.write_with_encoder(encoder)
-        .map_err(|e| format!("JPEG encoding failed: {e}"))
+        .map_err(|e| format!("JPEG encoding failed: {e}"))?;
+    writer
+        .flush()
+        .map_err(|e| format!("Could not flush the wallpaper file: {e}"))?;
+    writer
+        .into_inner()
+        .map_err(|e| format!("Could not flush the wallpaper file: {e}"))?
+        .sync_all()
+        .map_err(|e| format!("Could not commit the wallpaper file to disk: {e}"))
 }
 
 #[cfg(test)]
@@ -110,16 +134,35 @@ mod tests {
 
     #[test]
     fn decodes_files_without_an_extension() {
-        // A download lands in an extension-less temporary file, so the decoder
-        // has to sniff the contents instead of trusting the file name.
+        // Stored originals are named from a content sniff, so the decoder must
+        // never depend on the file name to agree with the payload.
         let dir = std::env::temp_dir().join("apod-wallpaper-decode-test");
         let _ = fs::remove_dir_all(&dir);
-        let path = dir.join(".incoming-image");
+        let path = dir.join("no-extension-here");
 
         save_jpeg(&RgbImage::from_pixel(8, 4, image::Rgb([10, 20, 30])), &path).unwrap();
         let decoded = decode(&path).expect("a JPEG with no file extension must decode");
 
         assert_eq!((decoded.width(), decoded.height()), (8, 4));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn decodes_a_payload_still_in_memory() {
+        let dir = std::env::temp_dir().join("apod-wallpaper-decode-bytes-test");
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("source.jpg");
+        save_jpeg(&RgbImage::from_pixel(6, 3, image::Rgb([1, 2, 3])), &path).unwrap();
+
+        let bytes = fs::read(&path).unwrap();
+        let decoded = decode_bytes(&bytes).expect("a JPEG payload must decode from memory");
+        assert_eq!((decoded.width(), decoded.height()), (6, 3));
+
+        // The validation the download path relies on: garbage is rejected here
+        // rather than after it has been installed.
+        assert!(decode_bytes(b"<html>404 not found</html>").is_err());
+        assert!(decode_bytes(&bytes[..bytes.len() / 2]).is_err());
+
         let _ = fs::remove_dir_all(&dir);
     }
 }
