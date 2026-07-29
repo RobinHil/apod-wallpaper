@@ -98,7 +98,10 @@ mod platform {
     /// over D-Bus, a dependency and a client for one signal. The scheduler
     /// keeps a slow re-check on this platform instead.
     pub fn watch(wakeup: &Wakeup) {
-        use gdk::prelude::*;
+        // No `gdk::prelude` import: as of gtk-rs 0.18 `Screen::default` and
+        // the two `connect_*` methods below are inherent on `Screen` rather
+        // than coming from `ScreenExt`, so importing the prelude is an unused
+        // import and nothing more.
 
         // GTK is initialised by Tauri before the setup hook runs; if it is
         // not, there is no display to watch anyway.
@@ -124,11 +127,12 @@ mod platform {
     use std::sync::OnceLock;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::System::Power::PBT_APMRESUMEAUTOMATIC;
+    // `PBT_APMRESUMEAUTOMATIC` lives with the window messages rather than in
+    // `System::Power`: it is a `WM_POWERBROADCAST` payload, not a power API.
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
-        TranslateMessage, CW_USEDEFAULT, MSG, WM_DISPLAYCHANGE, WM_POWERBROADCAST, WNDCLASSW,
-        WS_OVERLAPPED,
+        TranslateMessage, CW_USEDEFAULT, MSG, PBT_APMRESUMEAUTOMATIC, WM_DISPLAYCHANGE,
+        WM_POWERBROADCAST, WNDCLASSW, WS_OVERLAPPED,
     };
 
     /// The window procedure runs on its own thread and cannot capture, so the
