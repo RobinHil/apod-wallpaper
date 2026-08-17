@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "APOD Wallpaper",
+  "mainBinaryName": "apod-wallpaper",
   "version": "0.1.0",
   "identifier": "com.rh.apod-wallpaper",
   "build": {
@@ -18,17 +19,19 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg"],
     "category": "Utility",
     "shortDescription": "NASA Astronomy Picture of the Day as your wallpaper",
-    "longDescription": "A tray application that sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day. Also supports a random pick from the archive and any specific date since 16 June 1995.",
+    "longDescription": "A menu bar application that sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day. Also supports a random pick from the archive and any specific date since 16 June 1995.",
     "copyright": "Copyright (c) 2026 Robin HILAIRE. APOD images with a copyright notice remain the property of their authors.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
+      "icons/icon.icns"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
   }
 }

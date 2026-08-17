@@ -136,7 +136,7 @@ impl Store {
 
 /// Writes a file by way of a temporary file in the same directory followed by
 /// a rename, so a crash or a full disk can never leave a half-written file
-/// behind. `fs::rename` replaces the destination on all supported platforms.
+/// behind. `fs::rename` replaces the destination atomically.
 ///
 /// The temporary file is flushed to the device before the rename, and the
 /// directory after it. Without the first, a power loss can leave the rename
@@ -177,17 +177,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 /// loss and not merely a process crash.
 ///
 /// Best effort by design: a failure here costs durability, never correctness,
-/// and there is nothing useful to tell the user about it. Unix only -- Windows
-/// does not let a directory be opened as a file, and its rename is journalled.
+/// and there is nothing useful to tell the user about it.
 pub fn sync_dir(dir: &Path) {
-    #[cfg(unix)]
-    {
-        if let Ok(handle) = fs::File::open(dir) {
-            let _ = handle.sync_all();
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = dir;
+    if let Ok(handle) = fs::File::open(dir) {
+        let _ = handle.sync_all();
     }
 }

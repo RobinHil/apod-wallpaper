@@ -1,175 +1,137 @@
 # APOD Wallpaper
 
-A small cross-platform desktop app (Windows, macOS, Linux) that sets NASA's
-Astronomy Picture of the Day (APOD) as your wallpaper. It lives in the system
-tray and runs in the background.
+A macOS application that downloads NASA's Astronomy Picture of the Day (APOD)
+and sets it as the desktop picture, once a day. It runs in the background, has
+no window of its own most of the time, and is opened from its menu bar icon or
+by launching it again.
 
-Built with [Tauri 2](https://tauri.app): Rust backend, vanilla
-TypeScript/HTML/CSS settings panel. No JS framework, no superfluous dependency.
+Requires **macOS 10.15 or later**, on Apple silicon or Intel.
 
-## Features
+Built with [Tauri 2](https://tauri.app): a Rust backend and a settings panel in
+plain TypeScript, HTML and CSS. No JavaScript framework.
 
-- **Picture of the day**: fetches the current APOD through the NASA API and
-  applies it as the wallpaper.
-- **Random mode**: draws a date at random from the whole APOD archive (since
-  16 June 1995). Clicking "Random" again draws another one straight away.
-- **Specific date mode**: shows the APOD for a date you pick, bounded between
-  16 June 1995 (the first APOD) and today.
-- **Once a day, then nothing**: the wallpaper is updated at startup and at the
-  local day change, and the app does no work at all in between. "Refresh now"
-  applies a new image on demand.
-- **Read-only tray**: the tray menu shows the image title, its date and its
-  copyright, and lets you open the panel or quit. Every setting and the manual
-  refresh live in the panel.
-- **Start at login**: optional, toggled from the panel.
-- **Predictable UI**: each panel action blocks the interface (with a visible
-  indicator) until it has fully applied, and every error is shown in a banner --
-  no operation fails silently.
-- **Screen-ratio aware** (default "blurred fill" mode): the original image is
-  centred whole and undistorted over a scaled-up, blurred and darkened copy of
-  itself that fills the screen. A "crop to fill" mode (no blur) is available in
-  the settings. No text is burned into the image: credits (date, copyright)
-  stay visible in the tray and the panel.
-- **Offline tolerant**: on a network outage or an exceeded API quota, the
-  wallpaper in place is left untouched and the app retries with a backoff until
-  it succeeds. The offline state is shown in the tray and the panel.
-- **Configurable API key**: `DEMO_KEY` by default, personal key saved from the
-  panel (stored locally) and put to use immediately -- saving a key retries the
-  update that the exhausted quota had just failed.
-- **Visible on first launch**: the panel opens by itself the first time the app
-  runs, then never again; afterwards it lives in the tray.
+---
 
-## Installing a release build
+## Table of contents
 
-Download the artifact for your platform from the
-[releases page](https://github.com/RobinHil/apod-wallpaper/releases).
+- [How it works](#how-it-works)
+- [Command-line options](#command-line-options)
+- [Where files are stored](#where-files-are-stored)
+- [Building from source](#building-from-source)
+- [Installing](#installing)
+- [Starting at login](#starting-at-login)
+- [Uninstalling](#uninstalling)
+- [NASA API key](#nasa-api-key)
+- [Project layout](#project-layout)
+- [Design notes](#design-notes)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Licence](#licence)
 
-Release builds are **not signed**, because Apple and Microsoft code-signing
-certificates are paid subscriptions. Each platform therefore needs a one-off
-step to tell the OS you trust the app; they are described below.
+---
 
-### Linux
+## How it works
 
-**AppImage** -- self-contained, runs anywhere, no root needed:
+### Choosing the image
+
+Three modes, selected in the settings panel:
+
+- **Picture of the day**: the image the APOD API reports as the most recently
+  published one. No date is sent with the request, so the API decides what
+  "today" is and the local time zone cannot skew the result.
+- **Random**: a date drawn at random from the whole archive, which starts on
+  16 June 1995. Clicking "Random" again draws another one immediately.
+- **Specific date**: the APOD published on a date you pick, between 16 June
+  1995 and today. A few days in the archive have no publication; those are
+  reported and the current wallpaper is kept.
+
+Some APOD entries are videos. No video file is served by the API (only a
+YouTube or Vimeo link), so the video's thumbnail is used as the wallpaper --
+the maximum-resolution one when YouTube has it. The panel says so and offers a
+link to watch the video.
+
+### When the wallpaper changes
+
+The wallpaper is updated when the app starts and at the local day change, and
+the process does nothing at all in between. There is one background task; it
+attempts an update, then sleeps until just after the next midnight.
+
+Three things end that sleep early:
+
+- **A screen change** -- a new resolution, a scale change, a display plugged
+  in or unplugged. The wallpaper is recomposed for the new size from the
+  original already on disk, without touching the network.
+- **Waking from sleep** -- the pending wait was measured against a clock that
+  stops while the Mac is asleep, so the task is told about the wake-up and
+  re-reads the wall clock.
+- **A failure** -- no network, an exhausted API quota, an API outage. The app
+  retries with an exponential backoff (10 s, 20 s, 40 s, ...) with ±20 %
+  jitter, capped at 15 minutes, until it succeeds. The wallpaper in place is
+  never disturbed by a failure.
+
+When today's picture has not been published yet, the most recent one is applied
+and the app looks again every 30 minutes rather than hammering the API.
+
+"Refresh now", in the panel, applies an image immediately -- including
+re-applying the current one, which is what restores it if you have set another
+desktop picture by hand since.
+
+### How the image is fitted to the screen
+
+The image is composed at the exact pixel size of the main display, in one of
+two modes:
+
+- **Blurred fill** (default): the whole image, undistorted, centred over a
+  blurred and darkened copy of itself that fills the screen. Nothing is cropped
+  and nothing is stretched.
+- **Crop**: the image is cropped to the screen's aspect ratio and fills it.
+
+No text is ever burned into the image. The date and the copyright are shown in
+the panel and in the menu bar menu.
+
+### The panel and the menu bar
+
+Everything is in the **settings panel**: the current image and its credits, the
+three modes, the fit mode, the manual refresh, the NASA API key, and the quit
+button. Closing it leaves the app running in the background.
+
+The **menu bar item** shows the current image's title, date and copyright, and
+opens the panel or quits. Everything it offers exists in the panel as well.
+
+The app has no Dock icon -- it is a background utility, declared as such
+through `LSUIElement` -- so there are two ways back to the panel: the menu bar
+item, or launching the application again from the Finder, Spotlight or
+Launchpad. The second one does not start a copy: it brings up the panel of the
+instance already running.
+
+---
+
+## Command-line options
+
+```
+apod-wallpaper [OPTIONS]
+
+  --background   Start without opening the settings panel
+  -h, --help     Show the usage message
+  -V, --version  Show the version
+```
+
+`--background` is what a launch agent should pass: a utility started at every
+login must not throw a window at you. Launched without it -- which is what
+double-clicking the app does -- the application opens its panel, because
+clicking an icon is a request to see something.
+
+To run the binary inside the bundle directly:
 
 ```bash
-chmod +x APOD_Wallpaper_*.AppImage
-./APOD_Wallpaper_*.AppImage
+"/Applications/APOD Wallpaper.app/Contents/MacOS/apod-wallpaper" --help
 ```
 
-For a menu entry and an icon, install
-[Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) or
-[AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), which
-integrate the AppImage on first run. Without one of those, the tray icon works
-but the app will not appear in your application menu.
-
-**Debian, Ubuntu, Mint** (`.deb`):
-
-```bash
-sudo apt install ./apod-wallpaper_*_amd64.deb
-```
-
-**Fedora, RHEL, openSUSE** (`.rpm`):
-
-```bash
-sudo dnf install ./apod-wallpaper-*.x86_64.rpm
-```
-
-Use the `aarch64`/`arm64` artifacts on ARM machines (Raspberry Pi, Asahi, ARM
-servers).
-
-### macOS
-
-Open the `.dmg` and drag the app into `Applications`. On first launch macOS
-refuses to open it, because the build is not notarised:
-
-> "APOD Wallpaper" is damaged and can't be opened.
-
-That message is Gatekeeper's quarantine flag, not a corrupted download. Clear
-it once:
-
-```bash
-xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"
-```
-
-Then open the app normally. Alternatively, right-click the app and choose
-*Open*, then confirm; or allow it from *System Settings > Privacy & Security*
-right after the failed launch.
-
-The first time the app sets your wallpaper, macOS asks for permission to
-control **System Events**. Accept it: that Apple event is how the desktop
-picture is set. If you refuse, you can re-enable it under
-*System Settings > Privacy & Security > Automation*.
-
-### Windows
-
-Run the `.exe` (NSIS) or `.msi` installer. SmartScreen will show:
-
-> Windows protected your PC
-
-Click **More info**, then **Run anyway**. This appears because the installer
-carries no Authenticode signature; it is expected for unsigned open-source
-builds.
-
-WebView2 is required and is preinstalled on Windows 10 and 11. The `.exe`
-installer downloads it automatically if it is missing; the `.msi` does not, so
-prefer the `.exe` on older systems.
-
-## Start at login
-
-Tick **Start automatically at login** in the panel. That is all that is needed
-on every platform; the app registers itself using the OS mechanism:
-
-| OS      | What gets created |
-|---------|-------------------|
-| Linux   | `~/.config/autostart/APOD Wallpaper.desktop` |
-| macOS   | `~/Library/LaunchAgents/com.rh.apod-wallpaper.plist` |
-| Windows | Value `APOD Wallpaper` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
-
-Unticking the box removes it again. You can also manage it from the OS:
-*Settings > Apps > Startup* on Windows, *System Settings > General > Login
-Items* on macOS, or your desktop's "Startup Applications" tool on Linux.
-
-## Uninstalling
-
-Quit the app from the tray menu first, and untick "Start automatically at
-login" so no launcher entry is left behind.
-
-| OS      | Command |
-|---------|---------|
-| Linux (deb) | `sudo apt remove apod-wallpaper` |
-| Linux (rpm) | `sudo dnf remove apod-wallpaper` |
-| Linux (AppImage) | delete the `.AppImage` file |
-| macOS   | drag `/Applications/APOD Wallpaper.app` to the Trash |
-| Windows | *Settings > Apps > Installed apps > APOD Wallpaper > Uninstall* |
-
-Then remove the local data, which no uninstaller touches:
-
-```bash
-# Linux
-rm -rf ~/.local/share/com.rh.apod-wallpaper "~/.config/autostart/APOD Wallpaper.desktop"
-
-# macOS
-rm -rf ~/Library/Application\ Support/com.rh.apod-wallpaper \
-       ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
-```
-
-```powershell
-# Windows (PowerShell)
-Remove-Item -Recurse -Force "$env:APPDATA\com.rh.apod-wallpaper"
-```
-
-Note that your desktop still points at the last image the app applied, which
-lived inside that directory. **Pick a new wallpaper before deleting it**, or
-your desktop background will go blank at the next login.
+---
 
 ## Where files are stored
 
-| OS      | Location |
-|---------|----------|
-| Linux   | `~/.local/share/com.rh.apod-wallpaper/` |
-| macOS   | `~/Library/Application Support/com.rh.apod-wallpaper/` |
-| Windows | `%APPDATA%\com.rh.apod-wallpaper\` |
+Everything lives in `~/Library/Application Support/com.rh.apod-wallpaper/`:
 
 ```
 settings.json                            API key, mode, chosen date, fit mode
@@ -178,244 +140,362 @@ current/<date>.<ext>                     the downloaded original
 current/wall-<date>-<fit>-<w>x<h>.jpg    the composition set as the wallpaper
 ```
 
-Only one image is kept: the one on your desktop. The directory stays under a
-few megabytes.
+Only one image is kept -- the one on your desktop. Everything else is deleted
+as soon as a new wallpaper has been applied, so the directory stays under a few
+megabytes.
 
-## Runtime dependencies
-
-| OS | Required |
-|----|----------|
-| Windows | WebView2 runtime (preinstalled on Windows 10/11) |
-| macOS | macOS 10.15 or newer; nothing to install |
-| Linux | `webkit2gtk-4.1`, `libappindicator3` (or `libayatana-appindicator3`), `librsvg2` |
-
-TLS is handled by rustls, compiled into the binary, so there is **no OpenSSL
-runtime dependency** on Linux.
-
-Setting the wallpaper on Linux shells out to whatever your desktop provides,
-all of which ship with their desktop: `gsettings` (GNOME and derivatives),
-`qdbus` (KDE Plasma), `xfconf-query` (XFCE), `pcmanfm` (LXDE), `dconf`
-(Cinnamon, MATE, Deepin). On a compositor with no declared desktop, `swaybg`
-(Wayland) or `feh` (X11) must be installed -- see "Known limitations".
-
-The tray icon requires an environment that supports
-`StatusNotifierItem`/AppIndicator (the "AppIndicator" extension is needed under
-GNOME).
+---
 
 ## Building from source
 
-Prerequisites:
-
-- [Rust](https://www.rust-lang.org/tools/install) (stable, via rustup)
-- [Node.js](https://nodejs.org) 18 or newer, with npm
-- Tauri's system prerequisites for your OS:
-  <https://tauri.app/start/prerequisites/>
-
-| OS      | Build dependencies |
-|---------|--------------------|
-| Windows | Microsoft C++ Build Tools |
-| macOS   | Xcode Command Line Tools (`xcode-select --install`) |
-| Linux   | `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf` |
+Three things are needed: the Xcode Command Line Tools,
+[Rust](https://www.rust-lang.org/tools/install) (stable, through rustup) and
+[Node.js](https://nodejs.org) 20 or newer with npm.
 
 ```bash
+xcode-select --install
 npm install
-npm run tauri dev     # development
-npm run tauri build   # production bundles
+npm run tauri dev      # development, with a live-reloading panel
+npm run bundle         # release bundle
 ```
 
-Artifacts land in `src-tauri/target/release/bundle/`: `.msi` and `.exe` on
-Windows, `.app` and `.dmg` on macOS, `.deb`, `.rpm` and `.AppImage` on Linux.
+`npm run bundle` produces
+`src-tauri/target/release/bundle/macos/APOD Wallpaper.app` and a `.dmg` next
+to it.
 
-Tauri does not support cross-compilation between operating systems: each
-platform is built from its own OS. See `.github/workflows/ci.yml` for the
-matrix that does this in CI.
+Building for the other architecture is a matter of adding the target and naming
+it:
 
-## Configuring the NASA API key
+```bash
+rustup target add x86_64-apple-darwin
+npm run bundle -- --target x86_64-apple-darwin
+```
 
-By default the app uses `DEMO_KEY`, limited to **30 requests/hour and 50
-requests/day** (per IP address). Since the app makes at most a handful of
-requests a day, that is plenty; a free personal key is still recommended if you
-share an IP with other API users:
+The bundle then lands under `src-tauri/target/<triple>/release/bundle/`.
 
-1. Request a key at <https://api.nasa.gov/> (simple form, key sent by email).
-2. Open the app panel (tray menu, "Open APOD Wallpaper").
-3. Paste the key in the "NASA API key" field and click "Save".
+Before opening a pull request, the same checks CI runs:
 
-The key is stored locally in `settings.json` and is only ever sent to the NASA
-API.
+```bash
+cd src-tauri
+cargo fmt --all --check
+cargo clippy --locked -- -D warnings                 # lints, as the app is shipped
+cargo clippy --locked --all-targets -- -D warnings   # lints, tests included
+cargo test --locked
+cd ..
+npx tsc --noEmit
+```
+
+Clippy twice is not a typo: `--all-targets` builds the tests, whose
+dev-dependencies can supply a feature the library needs but never declares.
+That builds, and the release build -- which has no dev-dependencies -- then
+fails. The first command is the one that matches what users install.
+
+---
+
+## Installing
+
+Release builds are downloadable from the
+[releases page](https://github.com/RobinHil/apod-wallpaper/releases). Take the
+`aarch64` build on Apple silicon and the `x86_64` one on Intel.
+
+Open the `.dmg` and drag the application into `Applications`. The builds are
+**not signed** -- an Apple code-signing certificate is a paid subscription --
+so the first launch is refused with a message about the app being damaged. That
+is Gatekeeper's quarantine flag, not a corrupted download. Clear it once:
+
+```bash
+xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"
+```
+
+Alternatively, right-click the app, choose *Open* and confirm, or allow it from
+*System Settings → Privacy & Security* right after the failed launch.
+
+The first time the app sets the wallpaper, macOS asks for permission to control
+**System Events**: that Apple event is how the desktop picture is set. If you
+refuse, re-enable it under *System Settings → Privacy & Security →
+Automation*.
+
+Launching it once opens its panel, applies the first wallpaper and leaves the
+app running in the background. To have it come back at the next login, add the
+launch agent below.
+
+---
+
+## Starting at login
+
+The application does not register itself: a login item is a change to your
+session, and you make it yourself, once.
+
+A **launch agent** is the way to start it hidden, because it is the only method
+that passes `--background`:
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+cat > ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.rh.apod-wallpaper</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/APOD Wallpaper.app/Contents/MacOS/apod-wallpaper</string>
+    <string>--background</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+EOF
+launchctl load ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
+```
+
+*System Settings → General → Login Items* works too and is two clicks, but it
+launches the app without arguments, so the panel opens at every login.
+
+---
+
+## Uninstalling
+
+Quit the application first, from the panel or the menu bar.
+
+```bash
+# The launch agent, if you added one
+launchctl unload ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
+rm -f ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
+
+# The application
+rm -rf "/Applications/APOD Wallpaper.app"
+```
+
+Finally the local data, which nothing else touches:
+
+```bash
+rm -rf ~/Library/Application\ Support/com.rh.apod-wallpaper
+```
+
+Your desktop is still pointing at the last image the app applied, which lived
+in that directory. **Choose another desktop picture before deleting it**, or
+the background goes blank at the next login.
+
+---
+
+## NASA API key
+
+By default the app uses `DEMO_KEY`, which NASA limits to **30 requests per hour
+and 50 per day, per IP address**. The app makes at most a handful of requests a
+day, so that is usually plenty; a personal key is worth having if you share an
+IP address with other users of the API.
+
+1. Request one at <https://api.nasa.gov/> -- a short form, the key arrives by
+   email.
+2. Open the panel, paste it into the "NASA API key" field, click "Save".
+
+Saving a key immediately retries the update, which is normally why you are
+typing one in. The key is stored in `settings.json` and is only ever sent to
+the NASA API; error messages have the request URL stripped out of them so it
+cannot leak into the panel.
+
+---
 
 ## Project layout
 
 ```
 apod-wallpaper/
-|- src-tauri/                  # Rust backend
+|- src-tauri/                    # Rust backend
 |  |- src/
-|  |  |- main.rs               # Binary entry point
-|  |  |- lib.rs                # Tauri setup: tray, panel window, commands
-|  |  |- scheduler.rs          # The only background task: when to update
-|  |  |- os_events.rs          # Screen-change and wake-from-sleep notifications
-|  |  |- updater.rs            # What an update does, end to end
-|  |  |- nasa_api.rs           # APOD API calls, parsing, error taxonomy
-|  |  |- store.rs              # state.json + the two image files, atomic writes
-|  |  |- image_compose.rs      # Ratio handling: blurred fill or crop
-|  |  |- wallpaper.rs          # Per-platform wallpaper setting
-|  |  `- settings.rs           # API key, mode, fit; JSON persistence
-|  |- Info.plist               # macOS: menu-bar app + Apple events usage
+|  |  |- main.rs                 # Binary entry point
+|  |  |- lib.rs                  # Tauri setup: menu bar, panel window, commands
+|  |  |- scheduler.rs            # The only background task: when to update
+|  |  |- os_events.rs            # Screen-change and wake-from-sleep notifications
+|  |  |- updater.rs              # What an update does, end to end
+|  |  |- nasa_api.rs             # APOD API calls, parsing, error taxonomy
+|  |  |- store.rs                # state.json + the two image files, atomic writes
+|  |  |- image_compose.rs        # Ratio handling: blurred fill or crop
+|  |  |- wallpaper.rs            # Setting the desktop picture
+|  |  `- settings.rs             # API key, mode, fit; JSON persistence
+|  |- Info.plist                 # Menu bar app (LSUIElement) + Apple events usage
 |  |- capabilities/default.json
 |  `- tauri.conf.json
-|- src/                        # Panel frontend (vanilla TypeScript)
-|  |- main.ts                  # State rendering, commands to the backend
-|  `- styles.css               # Light/dark theme (prefers-color-scheme)
-|- index.html                  # Panel structure (inline SVG icons)
-`- .github/workflows/ci.yml    # Lint/test gate + cross-platform build matrix
+|- src/                          # Panel frontend (vanilla TypeScript)
+|  |- main.ts                    # State rendering, commands to the backend
+|  `- styles.css                 # Light/dark theme (prefers-color-scheme)
+|- index.html                    # Panel structure (inline SVG icons)
+`- .github/workflows/ci.yml      # Lint/test gate + build matrix
 ```
 
-## Notable design decisions
+---
+
+## Design notes
 
 ### Scheduling: once a day, and otherwise asleep
 
-The app is meant to be invisible in `top`. There is exactly one background
-task, and it does this:
+The application is meant to be invisible in Activity Monitor. There is exactly
+one background task, and it does this:
 
-1. Attempt an update. There is no separate "am I online?" probe -- the fetch
-   is the probe, which is one round trip instead of two.
+1. Attempt an update. There is no separate "am I online?" probe -- the fetch is
+   the probe, which is one round trip instead of two.
 2. On success, sleep until the next local day change.
-3. On failure, or when today's APOD is not published yet, retry with an
-   exponential backoff (10s, 20s, 40s ...) with +/-20% jitter, capped at 15
-   minutes, until it succeeds. Then go back to step 2.
+3. On failure, or when today's APOD is not published yet, retry on a backoff
+   until it succeeds, then go back to step 2.
 
-Nothing else is armed. When the wallpaper is up to date, the process is
-sleeping on a single timer -- for the nine or so hours until the next midnight,
-not in periodic instalments.
+Nothing else is armed: no polling of the API, no periodic reapplication, no
+timer that exists only to ask whether anything has happened. When the wallpaper
+is up to date the process is sleeping on a single timer, for the nine or so
+hours to the next midnight, not in instalments.
 
-Two things can invalidate that sleep, and both arrive as OS notifications
-rather than being looked for:
+A sleep that long has to survive the Mac being suspended, and the timer counts
+against a clock that stops while it is. macOS posts `NSWorkspaceDidWake` on
+resume, so the task is woken, re-reads the wall clock and decides again --
+which costs one observer and no polling.
 
-- **The screen changes.** A new resolution, a monitor plugged in or unplugged,
-  displays rearranged. The wallpaper is recomposed from the original already on
-  disk, within seconds and without touching the network.
-- **The machine wakes from sleep.** The timer is measured against a clock that
-  does not advance while suspended, so without this a sleep started before a
-  closed lid would fire hours after midnight.
+Screen changes arrive the same way, as a notification rather than as something
+looked for: `NSApplicationDidChangeScreenParameters` covers a resolution
+change, a scale change, and a display plugged in or unplugged. Both
+notifications come from AppKit, which Tauri's macOS backend already links, so
+neither adds a crate to the build.
 
-Each platform is served by the toolkit its Tauri backend already links, so none
-of this adds a crate to the build: `NSApplicationDidChangeScreenParameters` and
-`NSWorkspaceDidWake` on macOS, `GdkScreen` on Linux (which covers X11 and
-Wayland alike), `WM_DISPLAYCHANGE` and `WM_POWERBROADCAST` on Windows.
-
-Resume from suspend is the one gap: on Linux it would mean a D-Bus client for
-logind, a dependency and a connection held open for the life of the process to
-catch one signal. There the sleep is split into six-hour stretches instead.
-This does not make the daily update any later -- the remaining time is
-recomputed at every wake, so the last stretch still ends exactly at the day
-change -- it only bounds how long a suspended machine takes to catch up.
-
-The same reasoning applies to retries. Subscribing to NetworkManager,
-NWPathMonitor and the Windows connectivity APIs would be roughly 200 lines of
-platform-specific code, and on Linux it would keep a D-Bus connection resident
-forever -- against the point of the exercise. A connection attempt with no
-network fails locally in about a millisecond, so a capped backoff is cheaper
-than the machinery to avoid it.
+The same reasoning applies to retries. Subscribing to `NWPathMonitor` would be
+another framework and another resident observer, to learn something a
+connection attempt reports locally in about a millisecond when there is no
+network. A capped backoff is cheaper than the machinery to avoid it.
 
 ### Nothing is redone that does not need to be
 
-`state.json` records the applied image and the composition inputs (fit mode and
-screen size). At startup, if the record already answers the current settings
-and both files are on disk, the app does nothing at all: no API call, no
-download, no wallpaper-set call. Restarting five times in a day costs five
-`state.json` reads.
+`state.json` records the applied image and the inputs its composition depended
+on -- fit mode and screen size. At startup, if that record already answers the
+current settings and both files are on disk, the app does nothing at all: no
+API call, no download, no wallpaper-set call. Restarting five times in a day
+costs five `state.json` reads.
 
-Changing the fit mode, or moving to a monitor with a different resolution,
+Changing the fit mode, or moving to a display with a different resolution,
 recomposes from the stored original without touching the network.
 
-When the platform reports no monitor at all -- lid closed, session locked --
+When macOS reports no main display at all -- lid closed, no external screen --
 the size the wallpaper was last composed for is reused. That is not a
 resolution change, and recomposing for a guessed size would replace a correct
 wallpaper with a wrong one.
 
 ### Failures never break the desktop
 
-The download goes to a temporary file, is validated by decoding it, is composed
-into a wallpaper, and only then are both files moved into place with atomic
-renames. The previous image stays on disk and on your desktop until the new one
-has actually been applied, so a partial download, a full disk or a crash
-mid-update cannot leave a black or broken background. `state.json` and
-`settings.json` are written the same way.
+The download is validated by decoding it in memory, composed into a wallpaper,
+and only then moved into place with atomic renames. The previous image stays on
+disk and on the desktop until the new one has actually been applied, so a
+partial download, a full disk or a crash mid-update cannot leave a black or
+broken background. `state.json` and `settings.json` are written the same way.
+
+### Setting the desktop picture
+
+macOS exposes no public API for the desktop picture that works across every
+Space at once; the supported route is an Apple event to **System Events**,
+which is the AppleScript the `wallpaper` crate wraps. Two consequences the app
+has to live with:
+
+- `Info.plist` carries `NSAppleEventsUsageDescription`. Without it the system
+  refuses the event outright rather than prompting, and the first wallpaper
+  would fail with nothing the user could act on.
+- The call is thoroughly blocking, seconds of it when the desktop is busy, so
+  it runs on tokio's blocking pool -- never on a runtime worker, where it would
+  hold up every panel command queued behind it.
+
+### The menu bar item is optional
+
+The panel carries every setting, the refresh and the quit button; launching the
+app again opens that panel; and a menu bar item that fails to build is logged
+and stepped over rather than being a startup error. Nothing the application
+does depends on it existing.
 
 ### Video APODs
 
-Some APOD entries are videos. The API serves no video file (only a
-YouTube/Vimeo embed link), so an animated wallpaper is not feasible without
-heavy dependencies. Instead the video **thumbnail** is used: for YouTube the
-maximum-resolution version (`maxresdefault`, usually 1280x720) is tried first,
-falling back to the standard thumbnail. The panel flags it as a video and
-offers a direct link to watch it; the tray appends "(video)" to the title. When
-no thumbnail is available, the current wallpaper is kept (daily mode) or a new
-date is drawn (random mode).
+Some entries are videos, and the API serves no video file -- only a YouTube or
+Vimeo embed link. An animated wallpaper would mean heavy dependencies for a
+handful of days a year, so the video's **thumbnail** is used instead: the
+maximum-resolution one for YouTube (`maxresdefault`, usually 1280x720), falling
+back to the standard thumbnail, which is all that exists for older videos. The
+panel flags it and links to the video; the menu bar appends "(video)" to the
+title. With no thumbnail at all, the current wallpaper is kept in daily mode,
+and another date is drawn in random mode.
 
-### Daily mode sends no date parameter
+### Daily mode sends no date
 
-The app asks the API for "the most recently published image" rather than the
-local date, which removes time-zone skew (APOD is published on US Eastern
-time). Just after local midnight the API still serves yesterday's picture; that
-counts as *not yet satisfied*, so the app applies it if it is new and keeps
-retrying until today's is published. Pinning to yesterday's would skip today's
-entirely.
-
-### Light and dark themes
-
-On Windows, macOS and nearly every Linux desktop the wallpaper is a single
-image applied whatever the active theme. GNOME 42 and later are the one
-exception: the dark theme reads a separate key (`picture-uri-dark`), which the
-app sets alongside `picture-uri` so the image changes in dark mode too.
+The app asks the API for "the most recently published image" rather than for
+the local date, which removes the time-zone skew (APOD is published on US
+Eastern time). Just after local midnight the API still serves yesterday's
+picture; that counts as *not yet satisfied*, so the app applies it if it is new
+and keeps looking until today's appears. Pinning the request to the local date
+would skip today's picture entirely on some days.
 
 ### Other
 
-- **Cheap gaussian blur**: the backdrop is blurred on a 1/8 scale copy then
-  scaled back up; the result matches a heavy blur on the full-size image for a
-  fraction of the CPU cost.
-- **Varying file name**: the composition embeds the date, fit mode and screen
-  size in its file name, because some desktops (macOS in particular) cache the
-  wallpaper by path and ignore a file rewritten in place.
+- **Cheap gaussian blur**: the backdrop is blurred on a 1/8 scale copy and
+  scaled back up. The result is indistinguishable from a heavy blur on the
+  full-size image, for a fraction of the CPU.
+- **Varying file name**: the composition carries the date, fit mode and screen
+  size in its name, because macOS caches the desktop picture by path and
+  ignores a file rewritten in place.
 - **Errors are never silent**: panel commands wait for the Rust side to finish
-  and return any error to the frontend, which blocks the UI while waiting and
-  shows the error in a banner. The background task records its failures in the
-  status visible from the panel.
-- **Copyright**: the API's `copyright` field is kept and shown in the tray and
-  the panel. When present, the image is **not** public domain: it belongs to
-  its author and use is limited to a personal wallpaper. Images without a
-  copyright are produced by NASA and are public domain.
+  and return any error to the frontend, which blocks the UI meanwhile and shows
+  the message in a banner. The background task records its failures in the
+  status line the panel displays.
+- **Copyright**: the API's `copyright` field is preserved and shown in the
+  panel and the menu bar. When it is present the image is **not** public
+  domain: it belongs to its author, and using it is limited to a personal
+  wallpaper. Images without one are NASA's and are public domain.
+
+---
+
+## Troubleshooting
+
+**The application starts but there is no icon in the Dock.** Expected: it is a
+background utility with no Dock icon. Use the menu bar item, or launch the
+application again from Spotlight or the Finder to bring the panel back up.
+
+**The wallpaper does not change.** Open the panel: every failure is shown
+there, in a banner or in the status line at the bottom. If nothing is reported
+and the desktop still does not change, the Apple event is most likely being
+denied -- check *System Settings → Privacy & Security → Automation* and make
+sure **APOD Wallpaper** is allowed to control **System Events**. To see what
+the desktop is currently pointing at:
+
+```bash
+osascript -e 'tell application "System Events" to get picture of current desktop'
+```
+
+It should be a file in `~/Library/Application Support/com.rh.apod-wallpaper/current/`.
+
+**"APOD Wallpaper is damaged and can't be opened."** The quarantine flag on an
+unsigned download. See [Installing](#installing).
+
+**Started at login but nothing happened.** Check the agent is loaded and runs
+the right command:
+
+```bash
+launchctl list | grep apod-wallpaper
+plutil -p ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
+pgrep -a apod-wallpaper
+```
+
+`ProgramArguments` must end with `--background`, and the path must point inside
+the installed `.app`.
+
+---
 
 ## Known limitations
 
-- **Linux**: setting the wallpaper depends on the desktop environment.
-  Supported through the `wallpaper` crate: GNOME and its derivatives (Unity,
-  Budgie, Pantheon), KDE Plasma, XFCE, LXDE, MATE, Cinnamon, Deepin, and as a
-  last resort any compositor with `swaybg` (Wayland) or `feh` (X11) installed.
-  On an unrecognised environment an explicit message is shown in the panel.
-  Compositors with no declared desktop (Hyprland, sway, i3...) go through that
-  fallback: each application relaunches `swaybg`, which can conflict with a
-  wallpaper daemon already in place (`swww`, `hyprpaper`); those environments
-  are not officially supported.
-- **KDE Plasma**: the wallpaper is set by evaluating a script through
-  `qdbus`. Some Qt6-only distributions ship that binary as `qdbus6` with no
-  `qdbus` alias, in which case setting the wallpaper fails with the explicit
-  error shown in the panel; installing the Qt5 `qdbus` tool fixes it. This has
-  not been verified on Plasma 6.
-- **Multiple monitors**: the image is composed at the primary screen's
-  resolution; secondary screens get the same image. Plugging, unplugging or
-  resizing a screen is noticed and recomposed for; which screen counts as
-  primary is whatever the OS reports.
-- **Linux and suspend**: waking from suspend is not reported (it would take a
-  D-Bus client for logind), so an update due while the machine was asleep
-  happens within six hours of the machine coming back rather than immediately.
-- **macOS**: setting the wallpaper goes through an AppleScript event, which
-  requires the Automation permission described in the install section.
-- **Unsigned builds**: see the install section for the Gatekeeper and
-  SmartScreen steps. Signing them properly needs paid certificates from Apple
-  and a Windows CA.
+- **Multiple displays**: the image is composed at the main display's
+  resolution, and macOS applies it to every desktop and every Space. On a
+  second screen of a different size it is scaled to fit. Plugging, unplugging
+  or resizing a display is noticed and recomposed for.
+- **The Apple event permission** is asked for once and has to be granted. A
+  denied automation permission is silent from the app's side: the event fails,
+  the error reaches the panel, but nothing can re-prompt for it -- it has to be
+  re-enabled in System Settings.
+- **Unsigned builds**: the Gatekeeper step in the install section is needed on
+  every download. Signing properly requires a paid Apple Developer certificate.
+
+---
 
 ## Licence
 
 - Project code: to be defined by the repository owner.
-- APOD images with a copyright notice remain the property of their authors.
+- APOD images carrying a copyright notice remain the property of their authors.

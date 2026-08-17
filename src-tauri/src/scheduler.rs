@@ -4,21 +4,14 @@ use chrono::Local;
 use std::time::Duration;
 use tauri::AppHandle;
 
-/// Longest single sleep.
+/// Longest single sleep. Above the longest wait the loop can ever compute, so
+/// it never splits a wait in two: it is a backstop, not a polling interval.
 ///
-/// The sleep is measured against a clock that does not advance while the
-/// machine is suspended, so a night with the lid closed would push the day
-/// change hours late. macOS and Windows say when they wake up (see
-/// `os_events`), so there the sleep runs to the next day change and the
-/// process is idle until then.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+/// A suspended machine cannot make it fire late either: the sleep below is
+/// measured against a clock that stops while the machine is asleep, but macOS
+/// reports the resume itself and the loop then re-reads the wall clock (see
+/// `os_events`).
 const MAX_SLEEP: Duration = Duration::from_secs(25 * 3600);
-/// On Linux nothing reports the resume, short of a D-Bus client for logind, so
-/// the sleep is split and the wall clock re-read a few times a day. This does
-/// not make the daily update any later: the remaining time is recomputed at
-/// every wake, so the last stretch still ends exactly at the day change.
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-const MAX_SLEEP: Duration = Duration::from_secs(6 * 3600);
 /// Interval used while waiting for today's APOD to be published. Deliberately
 /// unhurried: this is not a failure, and polling the API every 15 minutes from
 /// local midnight until publication would burn most of DEMO_KEY's 50 daily
@@ -71,9 +64,10 @@ pub async fn run(app: AppHandle, wakeup: Wakeup) {
         };
 
         // Waits for the deadline, unless an OS event cuts the wait short.
-        let interrupted = tokio::time::timeout(wait.min(MAX_SLEEP), wakeup.notified())
-            .await
-            .is_ok();
+        let interrupted = tokio::select! {
+            _ = wakeup.notified() => true,
+            _ = tokio::time::sleep(wait.min(MAX_SLEEP)) => false,
+        };
         if interrupted {
             tokio::time::sleep(SETTLE).await;
         }
@@ -114,18 +108,13 @@ mod tests {
     }
 
     #[test]
-    fn the_sleep_cap_never_delays_the_day_change() {
-        // Whether the sleep is split or not, the last stretch is the exact
-        // remainder to just past midnight, so the cap only ever bounds how
-        // long a suspended machine takes to notice. This guards the day the
-        // cap is lowered below the longest possible wait without splitting the
-        // update off the day change.
+    fn the_sleep_cap_never_splits_a_wait() {
+        // The cap exists so an absurd computed wait cannot park the task for
+        // ever; it must stay above every wait the loop can produce, or the
+        // day change would be reached in instalments instead of in one sleep.
         let longest_possible_wait = Duration::from_secs(24 * 3600 + 5);
-        assert!(
-            MAX_SLEEP >= longest_possible_wait
-                || cfg!(not(any(target_os = "macos", target_os = "windows"))),
-            "a capped sleep is only acceptable where the OS reports no resume"
-        );
+        assert!(MAX_SLEEP >= longest_possible_wait);
+        assert!(PUBLICATION_RETRY <= MAX_SLEEP && BACKOFF_MAX <= MAX_SLEEP);
     }
 
     #[test]

@@ -17,26 +17,10 @@ env:
 
 jobs:
   # Gate: nothing is built until formatting, lints, types and tests pass once.
-  #
-  # Clippy and the tests run on all three platforms, because a good third of
-  # the unsafe code in this app -- the AppKit and Win32 observers in
-  # `os_events` -- is compiled out everywhere but its own target, and would
-  # otherwise reach the build job unlinted.
   check:
-    name: Lint and test (${{ matrix.label }})
-    runs-on: ${{ matrix.os }}
+    name: Lint and test
+    runs-on: macos-15
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: linux
-            os: ubuntu-24.04
-            primary: true
-          - label: macos
-            os: macos-15
-          - label: windows
-            os: windows-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -47,20 +31,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: check-${{ matrix.label }}
-
-      - name: Install Linux build dependencies
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          key: check
 
       - name: Check Rust formatting
-        if: matrix.primary
         run: cargo fmt --all --check
         working-directory: src-tauri
 
-      - name: Clippy
+      # Twice, and the first one is not redundant. `--all-targets` builds the
+      # tests, which pull in the dev-dependencies, and cargo unifies their
+      # features with the library's: a feature the code needs but the manifest
+      # never asks for is supplied by a dev-dependency and the build passes --
+      # right up until the release build, which has no dev-dependencies and
+      # fails. This is what the app is actually shipped as.
+      - name: Clippy (as shipped)
+        run: cargo clippy --locked -- -D warnings
+        working-directory: src-tauri
+
+      - name: Clippy (with tests)
         run: cargo clippy --locked --all-targets -- -D warnings
         working-directory: src-tauri
 
@@ -68,25 +55,20 @@ jobs:
         run: cargo test --locked
         working-directory: src-tauri
 
-      # Frontend and manifest checks are platform-independent: once is enough.
       - uses: actions/setup-node@v5
-        if: matrix.primary
         with:
           node-version: 22
           cache: npm
 
       - name: Install frontend dependencies
-        if: matrix.primary
         run: npm ci
 
       - name: Typecheck the frontend
-        if: matrix.primary
         run: npx tsc --noEmit
 
       # The version is declared in three files that nothing else keeps in
       # step, and a mismatch only shows up as mislabelled release artifacts.
       - name: Check the declared versions agree
-        if: matrix.primary
         run: |
           npm_version=$(node -p "require('./package.json').version")
           conf_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
@@ -109,29 +91,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: linux-x86_64
-            os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          # ARM runners are free for public repositories but billed on a
-          # private one; there, drop this entry (the macOS ones below have no
-          # alternative left, see the note on them).
-          - label: linux-aarch64
-            os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          # Both macOS bundles come off the Apple-silicon runner, the x86_64
-          # one by cross-compiling. The Intel macOS runners have been retired,
-          # and a job asking for one no longer fails -- it sits in the queue
-          # until something times out, which is what the timeout above is for.
+          # Both bundles come off the Apple-silicon runner, the x86_64 one by
+          # cross-compiling. The Intel runners have been retired, and a job
+          # asking for one no longer fails -- it sits in the queue until
+          # something times out, which is what the timeout above is for.
           - label: macos-x86_64
-            os: macos-15
             target: x86_64-apple-darwin
           - label: macos-aarch64
-            os: macos-15
             target: aarch64-apple-darwin
-          - label: windows-x86_64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
 
@@ -149,37 +117,33 @@ jobs:
           workspaces: src-tauri
           key: ${{ matrix.target }}
 
-      # `xdg-utils` is not part of the runner image and is not a build
-      # dependency of the app: linuxdeploy looks for `xdg-open` while
-      # assembling the AppImage, and bundling fails outright without it.
-      - name: Install Linux build dependencies
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
-            patchelf xdg-utils
-
       - run: npm ci
 
       - name: Build bundles
-        run: npm run tauri build -- --target ${{ matrix.target }}
+        run: npm run bundle -- --target ${{ matrix.target }}
+
+      # `LSUIElement` is what keeps the app out of the Dock, and it comes from
+      # `Info.plist` being merged into the bundle. A merge that silently stops
+      # happening would otherwise only show up as a Dock icon on someone's Mac.
+      - name: Check the bundled Info.plist
+        run: |
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/APOD Wallpaper.app"
+          plist="$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$plist"
+          /usr/libexec/PlistBuddy -c 'Print :NSAppleEventsUsageDescription' "$plist"
 
       - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.label }}
           if-no-files-found: error
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-            src-tauri/target/${{ matrix.target }}/release/bundle/rpm/*.rpm
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
 
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
+    # Only downloads the artifacts and attaches them to the tag: nothing is
+    # compiled here, so the cheapest runner does.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -193,10 +157,9 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
-          # These builds are unsigned; the README explains the Gatekeeper and
-          # SmartScreen steps users need.
+          # These builds are unsigned; the README explains the Gatekeeper step
+          # users need.
           body: |
-            Unsigned builds. On macOS run
-            `xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"`
-            after installing; on Windows choose "More info" then "Run anyway"
-            in SmartScreen. See the README for details.
+            Unsigned builds. After installing, run
+            `xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"`.
+            See the README for details.

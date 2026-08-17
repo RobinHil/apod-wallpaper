@@ -31,6 +31,13 @@ pub fn decode_bytes(bytes: &[u8]) -> Result<DynamicImage, String> {
         .map_err(|e| format!("Not a usable image: {e}"))
 }
 
+/// Smallest wallpaper this module will compose, and therefore the floor
+/// [`crate::screen_size`] clamps a monitor report to. Declared once because
+/// the two must agree: a screen measured below it would otherwise be recorded
+/// at one size and composed at another, and every later comparison would see a
+/// resolution change that never happened.
+pub const MIN_SCREEN: (u32, u32) = (640, 400);
+
 /// Ratio difference below which we fill the screen directly: the blurred
 /// backdrop would be invisible behind the image anyway.
 const RATIO_TOLERANCE: f32 = 0.03;
@@ -45,7 +52,7 @@ const DOWNSCALE: FilterType = FilterType::CatmullRom;
 
 /// Composes the final image at the exact screen size. No text is burned in:
 /// the wallpaper is the APOD as published, and the metadata (date, copyright)
-/// stays visible in the tray and the panel.
+/// stays visible in the menu bar and the panel.
 ///
 /// Every conversion below uses `into_rgb8` rather than `to_rgb8`: the value is
 /// owned and already RGB8, so the latter would copy a screen-sized buffer for
@@ -56,8 +63,8 @@ pub fn compose_wallpaper(
     screen_h: u32,
     fit: FitMode,
 ) -> RgbImage {
-    let screen_w = screen_w.max(640);
-    let screen_h = screen_h.max(400);
+    let screen_w = screen_w.max(MIN_SCREEN.0);
+    let screen_h = screen_h.max(MIN_SCREEN.1);
 
     match fit {
         FitMode::CropFill => original

@@ -15,8 +15,13 @@ use store::{Applied, Store};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
-use tauri_plugin_autostart::ManagerExt;
 use tokio::sync::Mutex;
+
+/// Starts the app without opening the settings panel. This is what the launch
+/// agent passes: a utility launched at every login must not throw a window at
+/// the user, while launching it from the Finder -- where clicking an icon is a
+/// request to see something -- must.
+const BACKGROUND_FLAG: &str = "--background";
 
 struct AppData {
     settings: Settings,
@@ -32,7 +37,7 @@ struct SharedState(Arc<Mutex<AppData>>);
 /// time, and whichever arrives second simply waits.
 struct UpdateLock(Mutex<()>);
 
-/// Handles to the tray menu entries whose text changes over time. The tray is
+/// Handles to the menu bar entries whose text changes over time. That menu is
 /// read-only: it shows the title and the credits.
 struct TrayHandles {
     title: MenuItem<Wry>,
@@ -50,10 +55,9 @@ struct UiState {
     status_message: Option<String>,
     last_check: Option<String>,
     current: Option<Applied>,
-    autostart: bool,
 }
 
-fn ui_state(d: &AppData, autostart: bool) -> UiState {
+fn ui_state(d: &AppData) -> UiState {
     UiState {
         mode: d.settings.mode,
         fit_mode: d.settings.fit_mode,
@@ -63,21 +67,13 @@ fn ui_state(d: &AppData, autostart: bool) -> UiState {
         status_message: d.status_message.clone(),
         last_check: d.last_check.clone(),
         current: d.store.applied().cloned(),
-        autostart,
     }
 }
 
-/// Whether the app is registered to start at login. Reading it is a file or
-/// registry lookup, so it is only done when the panel state is built.
-fn autostart_enabled(app: &AppHandle) -> bool {
-    app.autolaunch().is_enabled().unwrap_or(false)
-}
-
 async fn current_ui(app: &AppHandle) -> UiState {
-    let autostart = autostart_enabled(app);
     let state = app.state::<SharedState>();
     let d = state.0.lock().await;
-    ui_state(&d, autostart)
+    ui_state(&d)
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -89,17 +85,19 @@ fn truncate(s: &str, max: usize) -> String {
     out
 }
 
-/// Physical resolution of the primary monitor; other monitors get the same
-/// image (documented limitation in the README).
+/// Physical resolution of the monitor the wallpaper is composed for -- the
+/// main display, the one carrying the menu bar. The others get the same image
+/// (documented limitation in the README).
 ///
-/// `None` when the platform reports no monitor at all, which happens with the
-/// lid closed or the session locked. That is not a resolution change, and the
-/// caller must not treat it as one: recomposing for a guessed size would
-/// replace a correct wallpaper with a wrong one.
+/// `None` when macOS reports no main display at all, which happens with the
+/// lid closed and no external screen attached. That is not a resolution
+/// change, and the caller must not treat it as one: recomposing for a guessed
+/// size would replace a correct wallpaper with a wrong one.
 fn screen_size(app: &AppHandle) -> Option<(u32, u32)> {
     let monitor = app.primary_monitor().ok()??;
     let size = monitor.size();
-    Some((size.width.max(640), size.height.max(400)))
+    let (min_w, min_h) = image_compose::MIN_SCREEN;
+    Some((size.width.max(min_w), size.height.max(min_h)))
 }
 
 /// Label of the settings panel window, matching `capabilities/default.json`.
@@ -108,12 +106,13 @@ const PANEL: &str = "main";
 /// Opens the settings panel, creating the window if it does not exist.
 ///
 /// The window is built on demand and destroyed when closed, so no webview
-/// process is resident while the app sits in the tray -- which is where it
-/// spends essentially all of its life. Nothing is lost when it closes: every
-/// setting is persisted by the backend as it is changed.
+/// process is resident while the app sits in the background -- which is where
+/// it spends essentially all of its life. Nothing is lost when it closes:
+/// every setting is persisted by the backend as it is changed.
 fn show_panel(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(PANEL) {
         let _ = window.show();
+        let _ = window.unminimize();
         let _ = window.set_focus();
         return;
     }
@@ -124,6 +123,9 @@ fn show_panel(app: &AppHandle) {
         .resizable(false)
         .maximizable(false)
         .center()
+        // Hidden from the app switcher: the menu bar is the way back to a
+        // background utility, and the activation policy set at startup keeps
+        // it out of the Dock anyway.
         .skip_taskbar(true)
         .build();
 
@@ -135,7 +137,7 @@ fn show_panel(app: &AppHandle) {
     }
 }
 
-/// Pushes the current state to the panel and to the tray menu labels.
+/// Pushes the current state to the panel and to the menu bar labels.
 async fn refresh_ui(app: &AppHandle) {
     let ui = current_ui(app).await;
     let _ = app.emit("state-updated", &ui);
@@ -197,8 +199,7 @@ async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
         let changed = d.settings.mode != mode;
         if changed {
             d.settings.mode = mode;
-            let path = d.settings_path.clone();
-            d.settings.save(&path)?;
+            d.settings.save(&d.settings_path)?;
         }
         changed
     };
@@ -220,8 +221,7 @@ async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, Stri
         let previous = (d.settings.mode, d.settings.specific_date.clone());
         d.settings.mode = Mode::Specific;
         d.settings.specific_date = parsed.format("%Y-%m-%d").to_string();
-        let path = d.settings_path.clone();
-        d.settings.save(&path)?;
+        d.settings.save(&d.settings_path)?;
         previous
     };
 
@@ -238,8 +238,7 @@ async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, Stri
             let mut d = state.0.lock().await;
             d.settings.mode = previous.0;
             d.settings.specific_date = previous.1;
-            let path = d.settings_path.clone();
-            let _ = d.settings.save(&path);
+            let _ = d.settings.save(&d.settings_path);
         }
         refresh_ui(&app).await;
         return Err(format!(
@@ -251,29 +250,15 @@ async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, Stri
 }
 
 #[tauri::command]
-async fn set_autostart(app: AppHandle, enabled: bool) -> Result<UiState, String> {
-    let manager = app.autolaunch();
-    let changed = if enabled {
-        manager.enable()
-    } else {
-        manager.disable()
-    };
-    changed.map_err(|e| format!("Could not change the login item: {e}"))?;
-    Ok(current_ui(&app).await)
-}
-
-#[tauri::command]
 async fn set_fit_mode(app: AppHandle, fit: FitMode) -> Result<UiState, String> {
     {
-        let autostart = autostart_enabled(&app);
         let state = app.state::<SharedState>();
         let mut d = state.0.lock().await;
         if d.settings.fit_mode == fit {
-            return Ok(ui_state(&d, autostart));
+            return Ok(ui_state(&d));
         }
         d.settings.fit_mode = fit;
-        let path = d.settings_path.clone();
-        d.settings.save(&path)?;
+        d.settings.save(&d.settings_path)?;
     }
     // Not forced: the image on disk still matches the mode, so this recomposes
     // it locally instead of going back to the API.
@@ -296,8 +281,7 @@ async fn set_api_key(app: AppHandle, key: String) -> Result<UiState, String> {
         let changed = d.settings.api_key != key;
         if changed {
             d.settings.api_key = key;
-            let path = d.settings_path.clone();
-            d.settings.save(&path)?;
+            d.settings.save(&d.settings_path)?;
         }
         changed
     };
@@ -319,8 +303,13 @@ fn quit_app(app: AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Tray: read-only. Information about the current image, opening the panel,
-// quitting. Every setting lives in the panel.
+// Menu bar item: read-only. Information about the current image, opening the
+// panel, quitting. Every setting lives in the panel.
+//
+// It is a convenience, never the only way in. Nothing depends on it: the panel
+// carries every setting, the manual refresh and the quit button, launching the
+// app again brings that panel up (single instance), and an item that fails to
+// build is logged and stepped over rather than being a startup error.
 // ---------------------------------------------------------------------------
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
@@ -343,12 +332,20 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 
     app.manage(TrayHandles { title, info });
 
+    // Reported rather than asserted: the caller treats a menu bar item it
+    // could not build as a missing convenience and starts anyway, which a
+    // panic here would turn back into a fatal error.
+    let icon = app
+        .default_window_icon()
+        .ok_or_else(|| {
+            tauri::Error::Io(std::io::Error::other(
+                "the bundle carries no default icon to put in the menu bar",
+            ))
+        })?
+        .clone();
+
     TrayIconBuilder::with_id("apod-tray")
-        .icon(
-            app.default_window_icon()
-                .expect("missing default icon")
-                .clone(),
-        )
+        .icon(icon)
         .tooltip("APOD Wallpaper")
         .menu(&menu)
         .show_menu_on_left_click(true)
@@ -366,8 +363,46 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 // Entry point
 // ---------------------------------------------------------------------------
 
+/// True when the panel must stay closed at startup, for the arguments given.
+///
+/// Takes the arguments rather than reading them, because it answers for two
+/// callers: this process at launch, and the arguments a second launch hands to
+/// the running instance through the single-instance plugin.
+fn starts_in_background<S: AsRef<str>>(args: &[S]) -> bool {
+    // `skip(1)`: the first argument is the program itself, and a binary
+    // installed at a path containing the flag is not asking for anything.
+    args.iter()
+        .skip(1)
+        .any(|arg| arg.as_ref() == BACKGROUND_FLAG)
+}
+
+/// What the binary answers to `--help`. Short on purpose: this is a desktop
+/// application with one option, and that option exists for the launch agent
+/// described in the README.
+const USAGE: &str = concat!(
+    "APOD Wallpaper ",
+    env!("CARGO_PKG_VERSION"),
+    "\n\nSets NASA's Astronomy Picture of the Day as your desktop wallpaper.\n\
+     The application keeps running in the background once started.\n\n\
+     Usage: apod-wallpaper [OPTIONS]\n\n\
+     Options:\n  \
+       --background  Start without opening the settings panel (for a launch agent)\n  \
+       -h, --help    Show this message\n  \
+       -V, --version Show the version\n"
+);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    for arg in args.iter().skip(1) {
+        match arg.as_str() {
+            "-h" | "--help" => return println!("{USAGE}"),
+            "-V" | "--version" => return println!(env!("CARGO_PKG_VERSION")),
+            _ => {}
+        }
+    }
+    let background = starts_in_background(&args);
+
     // Tauri's default runtime sizes itself to the machine: ten worker threads
     // on a ten-core laptop, for an app that makes one HTTP request a day. Two
     // is enough. Nothing blocking runs on these threads -- image work and the
@@ -383,36 +418,33 @@ pub fn run() {
     tauri::async_runtime::set(runtime.handle().clone());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Second launch: show the panel of the existing instance.
-            show_panel(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // Launched again while already running -- from the desktop icon,
+            // almost always, since that is how the app is reopened. Bring the
+            // panel up, unless this second launch was itself a background one
+            // (a login that started the app twice, say).
+            if !starts_in_background(&args) {
+                show_panel(app);
+            }
         }))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
         .invoke_handler(tauri::generate_handler![
             get_state,
             set_mode,
             set_specific_date,
             set_api_key,
             set_fit_mode,
-            set_autostart,
             refresh_now,
             quit_app
         ])
-        .setup(|app| {
-            // No Dock icon: this is a menu-bar application.
-            #[cfg(target_os = "macos")]
+        .setup(move |app| {
+            // No Dock icon and no application menu: this is a menu-bar
+            // application. `LSUIElement` in `Info.plist` says the same for a
+            // bundled build; this covers the binary run on its own.
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let data_dir = app.path().app_data_dir()?;
             let settings_path = data_dir.join("settings.json");
-            // Nothing persisted yet: this is the first launch. Worth knowing,
-            // because a tray application that starts silently is invisible --
-            // and on a GNOME desktop without the AppIndicator extension, there
-            // is not even a tray icon to find.
             let first_run = !settings_path.exists();
             let settings = Settings::load(&settings_path);
             let store = Store::load(&data_dir);
@@ -435,7 +467,11 @@ pub fn run() {
                 last_check: None,
             }))));
 
-            build_tray(app)?;
+            // A menu bar item that cannot be built is a missing convenience,
+            // not a reason to refuse to start: see the note above `build_tray`.
+            if let Err(e) = build_tray(app) {
+                eprintln!("no menu bar icon: {e}");
+            }
 
             // Screen changes and resumes from sleep reach the scheduler
             // through this, which is why it can sleep to the next day change
@@ -446,10 +482,11 @@ pub fn run() {
             // The one and only background task.
             tauri::async_runtime::spawn(scheduler::run(app.handle().clone(), wakeup));
 
-            // Show the panel once, on the very first launch, so the app is not
-            // a process the user has no evidence of. Every later start goes
-            // straight to the tray.
-            if first_run {
+            // Launched from the Finder rather than from the launch agent: the
+            // click was a request to see the app, so show it. `--background`
+            // is what a login start passes, and it goes straight to work with
+            // nothing on screen.
+            if !background {
                 show_panel(app.handle());
             }
 
@@ -459,11 +496,40 @@ pub fn run() {
         .expect("error while launching the application")
         .run(|_app, event| {
             // With no visible window, prevent the automatic exit: the app only
-            // quits through the tray menu.
+            // quits through the panel or the menu bar.
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                 if code.is_none() {
                     api.prevent_exit();
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{starts_in_background, truncate, BACKGROUND_FLAG, USAGE};
+
+    #[test]
+    fn only_the_background_flag_suppresses_the_panel() {
+        assert!(starts_in_background(&["apod-wallpaper", BACKGROUND_FLAG]));
+        assert!(!starts_in_background(&["apod-wallpaper"]));
+        // A path that happens to contain the flag is not a request for it:
+        // the program name is never read as an argument.
+        assert!(!starts_in_background(&["/opt/--background/apod-wallpaper"]));
+        assert!(!starts_in_background(&["apod-wallpaper", "--backgrounds"]));
+    }
+
+    #[test]
+    fn the_usage_text_documents_the_flag_it_accepts() {
+        assert!(USAGE.contains(BACKGROUND_FLAG));
+    }
+
+    #[test]
+    fn truncate_keeps_short_titles_and_bounds_long_ones() {
+        assert_eq!(truncate("Andromeda", 20), "Andromeda");
+        assert_eq!(truncate("Andromeda", 6), "And...");
+        // Counted in characters, not bytes: a title cut mid-character would
+        // reach the menu bar as broken text.
+        assert_eq!(truncate("éééééé", 4), "é...");
+    }
 }

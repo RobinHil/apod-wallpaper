@@ -9,9 +9,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+# The `_lib` suffix keeps the library name distinct from the binary's, which
+# cargo otherwise refuses (rust-lang/cargo#8519).
 name = "apod_wallpaper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -19,8 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dev-dependencies]
-# `#[tokio::test]` for the handful of tests that need a runtime; the crate
-# itself drives its runtime by hand and needs neither feature.
+# `#[tokio::test]` for the handful of tests that need a runtime. `rt` is the
+# single-threaded runtime it builds; the crate itself builds its own.
 tokio = { version = "1.52.3", features = ["macros", "rt"] }
 
 [dependencies]
@@ -29,31 +28,21 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13.4", features = ["json", "query"] }
-tokio = { version = "1.52.3", features = ["sync", "time", "rt-multi-thread"] }
+# `macros` is `select!`, which the scheduler races its sleep with.
+tokio = { version = "1.52.3", features = ["sync", "time", "rt-multi-thread", "macros"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 rand = "0.10.2"
 chrono = { version = "0.4.45", features = ["serde"] }
-wallpaper = "3.2.0"
 tauri-plugin-single-instance = "2.4.2"
-tauri-plugin-autostart = "2"
 
-# Watching for screen changes and resumes from sleep, so the scheduler can wait
-# on events instead of waking up to look for them (see `os_events`). Every
-# crate below is already compiled as part of Tauri's backend for that platform,
-# so naming it here adds nothing to the build.
-
-[target.'cfg(target_os = "macos")'.dependencies]
+# Setting the desktop picture, and watching for the screen changes and wake-ups
+# the scheduler has to react to (see `wallpaper` and `os_events`). AppKit is
+# already compiled as part of Tauri's macOS backend, so the `objc2` crates add
+# nothing to the build.
+wallpaper = "3.2.0"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSNotification", "NSOperation", "NSString"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gdk = "0.18"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-# `Win32_Graphics_Gdi` is not a drawing dependency: `WNDCLASSW` carries a
-# brush and a cursor, so windows-sys gates the struct itself behind it.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 # A background utility: trade compile time for a smaller, faster binary.

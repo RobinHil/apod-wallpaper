@@ -2,7 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Menu-bar application: no Dock icon, no window at launch. -->
+	<!-- Background application: no Dock icon and no application menu. The
+	     settings panel is opened by launching the app, and closing it leaves
+	     the process running; a login agent starts it with --background, which
+	     opens nothing at all. -->
 	<key>LSUIElement</key>
 	<true/>
 	<!-- Setting the desktop picture goes through an AppleScript event to

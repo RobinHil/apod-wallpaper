@@ -16,7 +16,7 @@ const APOD_START: (i32, u32, u32) = (1995, 6, 16);
 /// Re-draws allowed in random mode when a date lands on a day with no
 /// publication or no usable image.
 const MAX_RANDOM_ATTEMPTS: usize = 6;
-/// Size used on a first run when the platform reports no monitor. Whatever it
+/// Size used on a first run when macOS reports no main display. Whatever it
 /// composes gets replaced the moment a real screen shows up, since the size is
 /// part of what the updater compares.
 const ASSUMED_SCREEN: (u32, u32) = (1920, 1080);
@@ -157,6 +157,14 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
             let mut record = a.clone();
             if record.fit != settings.fit_mode || record.width != width || record.height != height {
                 record = reapply(state, record, settings.fit_mode, width, height).await?;
+            } else if force {
+                // Same image, same composition, nothing to redo -- and yet the
+                // desktop may no longer be showing it, the user having set
+                // another wallpaper by hand since. That is exactly what
+                // "Refresh now" is for, so the file is handed to the desktop
+                // again. It is already on disk: no network, no recomposition.
+                let path = { state.lock().await.store.wallpaper_path(&record) };
+                apply_wallpaper(path).await?;
             }
             // Random mode decides whether today's draw has happened from
             // `applied_on`, so a draw that lands back on the image already in
@@ -396,10 +404,9 @@ async fn reapply(
 
 /// Hands the wallpaper to the desktop, off the async runtime.
 ///
-/// `wallpaper::set_wallpaper` is thoroughly blocking: an AppleScript event on
-/// macOS, a `gsettings`/`qdbus`/`swaybg` subprocess on Linux, a synchronous
-/// system call on Windows. Seconds of it on a runtime worker would be seconds
-/// a panel command spends queued behind it.
+/// `wallpaper::set_wallpaper` is thoroughly blocking: it sends an Apple event
+/// to System Events and waits for the answer. Seconds of that on a runtime
+/// worker would be seconds a panel command spends queued behind it.
 async fn apply_wallpaper(path: PathBuf) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || wallpaper::set_wallpaper(&path))
         .await
@@ -408,9 +415,8 @@ async fn apply_wallpaper(path: PathBuf) -> Result<(), String> {
 
 fn wallpaper_file_name(date: &str, fit: FitMode, width: u32, height: u32) -> String {
     // The screen size and fit mode are part of the name so a resolution or
-    // monitor change forces a fresh composition, and because some desktops
-    // (macOS in particular) cache the wallpaper by path and ignore a file
-    // rewritten in place.
+    // monitor change forces a fresh composition, and because macOS caches the
+    // desktop picture by path and ignores a file rewritten in place.
     let suffix = match fit {
         FitMode::BlurFill => "blur",
         FitMode::CropFill => "crop",
@@ -466,7 +472,7 @@ async fn offline(state: &State, e: ApiError) -> String {
 
 /// Records a failure that is not an outage: we reached the network fine, what
 /// came back was unusable. Clearing `offline` matters -- leaving it set would
-/// have the panel and the tray blame a connection that is working.
+/// have the panel and the menu bar blame a connection that is working.
 async fn fail(state: &State, message: String) -> String {
     let mut d = state.lock().await;
     d.offline = false;

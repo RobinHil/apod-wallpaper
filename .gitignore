@@ -17,19 +17,11 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.sw?
 
 # Rust / Tauri build outputs
 src-tauri/target
 src-tauri/gen/schemas
-
-# OS-specific files
-Thumbs.db
-Desktop.ini
 
 # Local configuration and environment files
 .env
