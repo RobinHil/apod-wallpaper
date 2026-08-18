@@ -164,17 +164,19 @@ npm run bundle         # release bundle
 
 `npm run bundle` produces
 `src-tauri/target/release/bundle/macos/APOD Wallpaper.app` and a `.dmg` next
-to it.
+to it, built for the machine it runs on.
 
-Building for the other architecture is a matter of adding the target and naming
-it:
+Releases are one universal bundle instead, which is what CI builds. Both
+targets have to be installed for it:
 
 ```bash
-rustup target add x86_64-apple-darwin
-npm run bundle -- --target x86_64-apple-darwin
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+npm run bundle -- --target universal-apple-darwin
 ```
 
-The bundle then lands under `src-tauri/target/<triple>/release/bundle/`.
+Naming a target moves the output under
+`src-tauri/target/<triple>/release/bundle/`, so
+`universal-apple-darwin/release/bundle/` here.
 
 Before opening a pull request, the same checks CI runs:
 
@@ -198,8 +200,9 @@ fails. The first command is the one that matches what users install.
 ## Installing
 
 Release builds are downloadable from the
-[releases page](https://github.com/RobinHil/apod-wallpaper/releases). Take the
-`aarch64` build on Apple silicon and the `x86_64` one on Intel.
+[releases page](https://github.com/RobinHil/apod-wallpaper/releases). There is
+one `.dmg` and it is universal: the same file runs on Apple silicon and on
+Intel.
 
 Open the `.dmg` and drag the application into `Applications`. The builds are
 **not signed** -- an Apple code-signing certificate is a paid subscription --
@@ -314,7 +317,7 @@ apod-wallpaper/
 |  |- components/                # One file per card, plus the SVG icons
 |  `- styles.css                 # Light/dark theme (prefers-color-scheme)
 |- index.html                    # Mount point for the panel
-`- .github/workflows/ci.yml      # Lint/test gate + build matrix
+`- .github/workflows/ci.yml      # Lint/test gate, universal bundle, release
 ```
 
 ---
@@ -456,6 +459,26 @@ half-entered API key.
 While a command is in flight the whole UI is covered by an overlay and pushed
 updates are ignored, so nothing moves under the pointer between the click and
 the result.
+
+### One bundle for both architectures
+
+A release is a single universal `.dmg` rather than one per architecture. It is
+twice the size -- 10 MB instead of 5 -- which for something downloaded once is
+a better trade than asking every user which of two files they need.
+
+Keeping the Intel slice is not sentiment. Rosetta translates x86_64 to ARM and
+never the reverse, so an Apple-silicon-only build runs on no Intel Mac at all.
+And macOS on arm64 begins at Big Sur, so that slice is compiled for 11.0 no
+matter what `minimumSystemVersion` says: the 10.15 this app advertises is
+carried entirely by the x86_64 slice. Dropping it would not be a packaging
+change, it would raise the real minimum to 11.0 and strand every Intel Mac
+without saying so. CI checks both slices are present, and that the x86_64 one
+still targets the advertised version.
+
+macOS 26 is the last release supporting Intel hardware, and those machines go
+on receiving security updates for about three years after it. That, rather than
+the arrival of newer Macs, is when the slice stops earning its place -- and
+`minimumSystemVersion` and `build.target` in `vite.config.ts` move with it.
 
 ### Other
 
