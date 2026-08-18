@@ -150,7 +150,8 @@ megabytes.
 
 Three things are needed: the Xcode Command Line Tools,
 [Rust](https://www.rust-lang.org/tools/install) (stable, through rustup) and
-[Node.js](https://nodejs.org) 20 or newer with npm.
+[Node.js](https://nodejs.org) 22 or newer with npm (CI builds on 24, the
+active LTS).
 
 ```bash
 xcode-select --install
