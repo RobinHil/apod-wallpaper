@@ -99,10 +99,15 @@ The **menu bar item** shows the current image's title, date and copyright, and
 opens the panel or quits. Everything it offers exists in the panel as well.
 
 The app has no Dock icon -- it is a background utility, declared as such
-through `LSUIElement` -- so there are two ways back to the panel: the menu bar
-item, or launching the application again from the Finder, Spotlight or
-Launchpad. The second one does not start a copy: it brings up the panel of the
-instance already running.
+through `LSUIElement`. Starting it puts nothing on screen: it goes straight to
+the menu bar and sets to work. The panel is only ever opened deliberately,
+either from the menu bar item or by launching the application again from the
+Finder, Spotlight or Launchpad. That second launch does not start a copy; it
+brings up the panel of the instance already running.
+
+The one exception is the very first launch, which opens the panel once so the
+app is not invisible on a machine that has never run it. Every later start,
+including at login, is silent.
 
 ---
 
@@ -111,15 +116,12 @@ instance already running.
 ```
 apod-wallpaper [OPTIONS]
 
-  --background   Start without opening the settings panel
   -h, --help     Show the usage message
   -V, --version  Show the version
 ```
 
-`--background` is what a launch agent should pass: a utility started at every
-login must not throw a window at you. Launched without it -- which is what
-double-clicking the app does -- the application opens its panel, because
-clicking an icon is a request to see something.
+Neither option starts the application; both print and exit. There is nothing
+here that changes how it runs, because there is only one way it runs: quietly.
 
 To run the binary inside the bundle directly:
 
@@ -216,9 +218,8 @@ The first time the app sets the wallpaper, macOS asks for permission to control
 refuse, re-enable it under *System Settings → Privacy & Security →
 Automation*.
 
-Launching it once opens its panel, applies the first wallpaper and leaves the
-app running in the background. To have it come back at the next login, add the
-launch agent below.
+Launching it opens the panel once -- the only time it does -- applies the
+first wallpaper and leaves the app running in the background.
 
 ---
 
@@ -227,32 +228,19 @@ launch agent below.
 The application does not register itself: a login item is a change to your
 session, and you make it yourself, once.
 
-A **launch agent** is the way to start it hidden, because it is the only method
-that passes `--background`:
+Open *System Settings → General → Login Items & Extensions*, and under **Open
+at Login** add `/Applications/APOD Wallpaper.app`. That is all there is to it.
+
+Nothing appears when you log in. Earlier versions needed a launch agent here,
+purely so the app could be passed a flag telling it not to open its panel; the
+app no longer opens it on its own, so the flag and the agent are both gone. If
+you still have `~/Library/LaunchAgents/com.rh.apod-wallpaper.plist` from one of
+those versions, remove it:
 
 ```bash
-mkdir -p ~/Library/LaunchAgents
-cat > ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.rh.apod-wallpaper</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Applications/APOD Wallpaper.app/Contents/MacOS/apod-wallpaper</string>
-    <string>--background</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-</dict>
-</plist>
-EOF
-launchctl load ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
+launchctl unload ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
+rm -f ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
 ```
-
-*System Settings → General → Login Items* works too and is two clicks, but it
-launches the app without arguments, so the panel opens at every login.
 
 ---
 
@@ -260,12 +248,10 @@ launches the app without arguments, so the panel opens at every login.
 
 Quit the application first, from the panel or the menu bar.
 
-```bash
-# The launch agent, if you added one
-launchctl unload ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
-rm -f ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
+Remove it from *System Settings → General → Login Items & Extensions* if you
+added it there, then:
 
-# The application
+```bash
 rm -rf "/Applications/APOD Wallpaper.app"
 ```
 
@@ -406,6 +392,26 @@ app again opens that panel; and a menu bar item that fails to build is logged
 and stepped over rather than being a startup error. Nothing the application
 does depends on it existing.
 
+### Starting is not the same as being asked to appear
+
+Starting the app puts nothing on screen. It is started at login, and a login
+that throws a window at you is precisely what a background utility must not do.
+Opening the panel is therefore always a deliberate act, and there are two of
+them, which reach the app by two different routes.
+
+Clicking the menu bar item is the direct one. Launching the application again
+is the indirect one, and it splits in two: for the installed `.app`, macOS does
+not start a second process at all -- LaunchServices reactivates the one already
+running and sends it `applicationShouldHandleReopen:`, surfacing in Tauri as
+`RunEvent::Reopen`. Running the binary inside the bundle directly *does* start
+a second process, and there the single-instance plugin hands the launch to the
+running instance and exits. Both end in the same place.
+
+The one automatic opening left is the very first launch, decided by the absence
+of `settings.json`. On a machine that has never run the app there is no menu bar
+icon the user has learnt to look for and no wallpaper to notice, so a completely
+silent first start would be indistinguishable from one that failed.
+
 ### Video APODs
 
 Some entries are videos, and the API serves no video file -- only a YouTube or
@@ -467,17 +473,17 @@ It should be a file in `~/Library/Application Support/com.rh.apod-wallpaper/curr
 **"APOD Wallpaper is damaged and can't be opened."** The quarantine flag on an
 unsigned download. See [Installing](#installing).
 
-**Started at login but nothing happened.** Check the agent is loaded and runs
-the right command:
+**Started at login and nothing appeared.** That is the intended behaviour --
+there is no window at login, by design. Check it is actually running, and look
+for its icon in the menu bar:
 
 ```bash
-launchctl list | grep apod-wallpaper
-plutil -p ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
 pgrep -a apod-wallpaper
 ```
 
-`ProgramArguments` must end with `--background`, and the path must point inside
-the installed `.app`.
+If it is not running, confirm the entry under *System Settings → General →
+Login Items & Extensions* points at `/Applications/APOD Wallpaper.app` and is
+switched on.
 
 ---
 

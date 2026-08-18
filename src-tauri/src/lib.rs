@@ -17,12 +17,6 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
 use tokio::sync::Mutex;
 
-/// Starts the app without opening the settings panel. This is what the launch
-/// agent passes: a utility launched at every login must not throw a window at
-/// the user, while launching it from the Finder -- where clicking an icon is a
-/// request to see something -- must.
-const BACKGROUND_FLAG: &str = "--background";
-
 struct AppData {
     settings: Settings,
     settings_path: PathBuf,
@@ -363,45 +357,30 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 // Entry point
 // ---------------------------------------------------------------------------
 
-/// True when the panel must stay closed at startup, for the arguments given.
-///
-/// Takes the arguments rather than reading them, because it answers for two
-/// callers: this process at launch, and the arguments a second launch hands to
-/// the running instance through the single-instance plugin.
-fn starts_in_background<S: AsRef<str>>(args: &[S]) -> bool {
-    // `skip(1)`: the first argument is the program itself, and a binary
-    // installed at a path containing the flag is not asking for anything.
-    args.iter()
-        .skip(1)
-        .any(|arg| arg.as_ref() == BACKGROUND_FLAG)
-}
-
-/// What the binary answers to `--help`. Short on purpose: this is a desktop
-/// application with one option, and that option exists for the launch agent
-/// described in the README.
+/// What the binary answers to `--help`. Short on purpose: this application has
+/// no options that change how it behaves. Starting it never puts anything on
+/// screen, so there is no longer a flag asking it not to.
 const USAGE: &str = concat!(
     "APOD Wallpaper ",
     env!("CARGO_PKG_VERSION"),
     "\n\nSets NASA's Astronomy Picture of the Day as your desktop wallpaper.\n\
-     The application keeps running in the background once started.\n\n\
+     Starts in the background and stays there; the menu bar icon opens the\n\
+     settings panel.\n\n\
      Usage: apod-wallpaper [OPTIONS]\n\n\
      Options:\n  \
-       --background  Start without opening the settings panel (for a launch agent)\n  \
        -h, --help    Show this message\n  \
        -V, --version Show the version\n"
 );
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let args: Vec<String> = std::env::args().collect();
-    for arg in args.iter().skip(1) {
+    for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "-h" | "--help" => return println!("{USAGE}"),
             "-V" | "--version" => return println!(env!("CARGO_PKG_VERSION")),
             _ => {}
         }
     }
-    let background = starts_in_background(&args);
 
     // Tauri's default runtime sizes itself to the machine: ten worker threads
     // on a ten-core laptop, for an app that makes one HTTP request a day. Two
@@ -418,14 +397,12 @@ pub fn run() {
     tauri::async_runtime::set(runtime.handle().clone());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            // Launched again while already running -- from the desktop icon,
-            // almost always, since that is how the app is reopened. Bring the
-            // panel up, unless this second launch was itself a background one
-            // (a login that started the app twice, say).
-            if !starts_in_background(&args) {
-                show_panel(app);
-            }
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second *process*, which only happens when the binary inside
+            // the bundle is run directly. Launching the bundle again while it
+            // runs starts nothing: macOS sends a reopen event instead, handled
+            // in `run()`. Both are deliberate, and both open the panel.
+            show_panel(app);
         }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -482,11 +459,16 @@ pub fn run() {
             // The one and only background task.
             tauri::async_runtime::spawn(scheduler::run(app.handle().clone(), wakeup));
 
-            // Launched from the Finder rather than from the launch agent: the
-            // click was a request to see the app, so show it. `--background`
-            // is what a login start passes, and it goes straight to work with
-            // nothing on screen.
-            if !background {
+            // Starting the app is not a request to see it. It lives in the
+            // menu bar, it is started at login, and a login that throws a
+            // window at the screen is exactly what a background utility must
+            // not do -- so an ordinary start puts nothing on screen at all.
+            //
+            // The very first launch is the one exception. There is no menu bar
+            // icon the user has learnt to look for yet and no wallpaper set,
+            // so opening the panel once is how the app says where it went.
+            // Every later start, login included, is silent.
+            if first_run {
                 show_panel(app.handle());
             }
 
@@ -494,34 +476,34 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while launching the application")
-        .run(|_app, event| {
+        .run(|app, event| match event {
+            // Launched again from the Finder, Spotlight, Launchpad or `open`
+            // while already running. macOS starts no second process for a
+            // bundled app -- it sends this instead -- so this, and not the
+            // single-instance plugin, is what makes launching the app again
+            // bring the panel back.
+            tauri::RunEvent::Reopen { .. } => show_panel(app),
             // With no visible window, prevent the automatic exit: the app only
             // quits through the panel or the menu bar.
-            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
-                if code.is_none() {
-                    api.prevent_exit();
-                }
+            tauri::RunEvent::ExitRequested { api, code, .. } if code.is_none() => {
+                api.prevent_exit()
             }
+            _ => {}
         });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{starts_in_background, truncate, BACKGROUND_FLAG, USAGE};
+    use super::{truncate, USAGE};
 
     #[test]
-    fn only_the_background_flag_suppresses_the_panel() {
-        assert!(starts_in_background(&["apod-wallpaper", BACKGROUND_FLAG]));
-        assert!(!starts_in_background(&["apod-wallpaper"]));
-        // A path that happens to contain the flag is not a request for it:
-        // the program name is never read as an argument.
-        assert!(!starts_in_background(&["/opt/--background/apod-wallpaper"]));
-        assert!(!starts_in_background(&["apod-wallpaper", "--backgrounds"]));
-    }
-
-    #[test]
-    fn the_usage_text_documents_the_flag_it_accepts() {
-        assert!(USAGE.contains(BACKGROUND_FLAG));
+    fn the_usage_text_matches_the_options_that_are_parsed() {
+        assert!(USAGE.contains("--help"));
+        assert!(USAGE.contains("--version"));
+        // Starting quietly is the only behaviour now, not something a flag
+        // asks for. A `--background` left in the help text would send users
+        // to a launch agent they no longer need.
+        assert!(!USAGE.contains("--background"));
     }
 
     #[test]
