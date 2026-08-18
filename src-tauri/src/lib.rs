@@ -494,7 +494,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{truncate, USAGE};
+    use super::{USAGE, truncate};
 
     #[test]
     fn the_usage_text_matches_the_options_that_are_parsed() {

@@ -1,7 +1,7 @@
 use crate::nasa_api::{self, ApiError, Apod};
 use crate::settings::{FitMode, Mode, Settings};
 use crate::store::{self, Applied};
-use crate::{image_compose, wallpaper, AppData, SharedState, UpdateLock};
+use crate::{AppData, SharedState, UpdateLock, image_compose, wallpaper};
 use chrono::{Days, Local, NaiveDate};
 use image::DynamicImage;
 use std::fs;
@@ -81,20 +81,18 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
         .unwrap_or(ASSUMED_SCREEN);
 
     // Nothing due: the image on disk already answers the current settings.
-    if !force {
-        if let Some(a) = &applied {
-            let usable = { state.lock().await.store.files_present(a) };
-            if usable && on_target(&settings, a, &today) {
-                if a.fit == settings.fit_mode && a.width == width && a.height == height {
-                    finish(state, note(&settings, a, &today)).await;
-                    return Ok(Outcome::Satisfied);
-                }
-                // Right image, wrong screen size or fit mode: recompose from
-                // the stored original, no network involved.
-                let record = reapply(state, a.clone(), settings.fit_mode, width, height).await?;
-                finish(state, note(&settings, &record, &today)).await;
+    if !force && let Some(a) = &applied {
+        let usable = { state.lock().await.store.files_present(a) };
+        if usable && on_target(&settings, a, &today) {
+            if a.fit == settings.fit_mode && a.width == width && a.height == height {
+                finish(state, note(&settings, a, &today)).await;
                 return Ok(Outcome::Satisfied);
             }
+            // Right image, wrong screen size or fit mode: recompose from
+            // the stored original, no network involved.
+            let record = reapply(state, a.clone(), settings.fit_mode, width, height).await?;
+            finish(state, note(&settings, &record, &today)).await;
+            return Ok(Outcome::Satisfied);
         }
     }
 
