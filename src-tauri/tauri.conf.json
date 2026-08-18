@@ -31,7 +31,7 @@
       "icons/icon.icns"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "13.3"
     }
   }
 }

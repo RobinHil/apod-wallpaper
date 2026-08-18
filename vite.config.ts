@@ -1,20 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
 
   build: {
-    // Vite's default target assumes a browser far newer than the oldest macOS
-    // this app supports. `minimumSystemVersion` is 10.15, whose WebKit is
-    // Safari 13; left alone, React's minified code ships logical-assignment
-    // operators (`??=`, `||=`) that Safari 13 cannot parse, and the panel
-    // would come up blank on the very systems the README promises.
-    target: "safari13",
+    // Kept in step with `minimumSystemVersion` in tauri.conf.json, which is
+    // itself set by Tailwind: its output uses cascade layers and `@property`,
+    // so the panel needs the WebKit that shipped with macOS 13.3.
+    target: "safari16.4",
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

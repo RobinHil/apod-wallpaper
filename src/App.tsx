@@ -22,7 +22,7 @@ export function App() {
 
       {error !== null && <ErrorBanner message={error} onDismiss={dismissError} />}
 
-      <main>
+      <main className="flex flex-1 flex-col gap-[12px] overflow-y-auto p-[12px]">
         <CurrentImageCard current={state?.current ?? null} loading={state === null} />
         <ModeCard state={state} run={run} onError={showError} />
         <ApiKeyCard state={state} run={run} />

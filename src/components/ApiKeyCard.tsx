@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { UiState } from "../types";
 import type { Run } from "../useAppState";
 import { useSyncedField } from "../useSyncedField";
+import { button, card, field, form, hint, linkButton, sectionTitle } from "../classes";
 import { KeyIcon } from "./Icons";
 
 export function ApiKeyCard({ state, run }: { state: UiState | null; run: Run }) {
@@ -14,15 +15,16 @@ export function ApiKeyCard({ state, run }: { state: UiState | null; run: Run }) 
   }
 
   return (
-    <section className="card">
-      <h2>NASA API key</h2>
-      <p className="hint">
+    <section className={card}>
+      <h2 className={sectionTitle}>NASA API key</h2>
+      <p className={hint}>
         Without a personal key, DEMO_KEY is used (30 requests/hour, 50/day). A free
         key takes seconds to obtain from api.nasa.gov.
       </p>
-      <form id="key-form" onSubmit={save}>
+      <form className={form} onSubmit={save}>
         <input
           ref={keyRef}
+          className={field}
           type="text"
           placeholder="DEMO_KEY"
           spellCheck={false}
@@ -30,10 +32,12 @@ export function ApiKeyCard({ state, run }: { state: UiState | null; run: Run }) 
           value={key}
           onChange={(event) => setKey(event.target.value)}
         />
-        <button type="submit">Save</button>
+        <button className={button} type="submit">
+          Save
+        </button>
       </form>
       <button
-        className="link-btn"
+        className={linkButton}
         type="button"
         onClick={() => void openUrl("https://api.nasa.gov/")}
       >

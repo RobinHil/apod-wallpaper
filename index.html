@@ -1,5 +1,12 @@
 <!doctype html>
-<html lang="en">
+<!-- `scheme-light-dark` makes the native controls -- the date picker's
+     calendar, the scrollbars, the caret -- follow the system theme. Without
+     it they stay light, and the date picker icon is invisible against the
+     dark background. -->
+<html
+  lang="en"
+  class="bg-bg text-text antialiased scheme-light-dark text-[14px] [text-rendering:optimizeLegibility]"
+>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,10 +14,10 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
 
-  <body>
-    <!-- The panel is rendered into this element, which is also the layout
-         container `#app` in the stylesheet. -->
-    <div id="app"></div>
+  <body class="cursor-default select-none">
+    <!-- The panel is rendered into this element, which is also the column the
+         whole layout hangs from. -->
+    <div id="app" class="flex h-screen flex-col"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

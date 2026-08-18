@@ -5,10 +5,10 @@ and sets it as the desktop picture, once a day. It runs in the background, has
 no window of its own most of the time, and is opened from its menu bar icon or
 by launching it again.
 
-Requires **macOS 10.15 or later**, on Apple silicon or Intel.
+Requires **macOS 13.3 or later**, on Apple silicon or Intel.
 
 Built with [Tauri 2](https://tauri.app): a Rust backend and a settings panel
-written in React and TypeScript, styled with plain CSS.
+written in React and TypeScript, styled with Tailwind CSS.
 
 ---
 
@@ -314,8 +314,9 @@ apod-wallpaper/
 |  |- useSyncedField.ts          # Text fields the backend also owns
 |  |- types.ts                   # UiState: the contract with the Rust side
 |  |- links.ts                   # APOD page and video URLs
+|  |- classes.ts                 # Utility strings more than one card needs
 |  |- components/                # One file per card, plus the SVG icons
-|  `- styles.css                 # Light/dark theme (prefers-color-scheme)
+|  `- styles.css                 # Tailwind entry point: the palette, light and dark
 |- index.html                    # Mount point for the panel
 `- .github/workflows/ci.yml      # Lint/test gate, universal bundle, release
 ```
@@ -460,33 +461,51 @@ While a command is in flight the whole UI is covered by an overlay and pushed
 updates are ignored, so nothing moves under the pointer between the click and
 the result.
 
+### One palette, two appearances
+
+The colours are Tailwind theme tokens: `--color-card` in the `@theme` block of
+`styles.css` is what makes `bg-card`, `border-card` and `text-card` exist. Dark
+mode redefines those same variables under `prefers-color-scheme`, which is why
+no component carries a `dark:` variant -- the utilities already point at the
+variable, and the variable changes underneath them.
+
+Two of Tailwind's preflight rules are handed back to WebKit in the same file.
+It tints the placeholder from the input's own colour, and it strips the padding
+out of the date field, which leaves that control shorter than the text input
+beside it. Both are reverted rather than worked around, so the two form rows
+line up.
+
+Utility strings that more than one card needs live in `classes.ts` as
+constants. They are never merged: two utilities setting the same property are
+resolved by their order in the generated stylesheet and not by their order in
+the attribute, so a variant such as the selected segment spells out its own
+colours instead of layering them over a base.
+
 ### One bundle for both architectures
 
 A release is a single universal `.dmg` rather than one per architecture. It is
 twice the size -- 10 MB instead of 5 -- which for something downloaded once is
 a better trade than asking every user which of two files they need.
 
-Keeping the Intel slice is not sentiment. Rosetta translates x86_64 to ARM and
-never the reverse, so an Apple-silicon-only build runs on no Intel Mac at all.
-And macOS on arm64 begins at Big Sur, so that slice is compiled for 11.0 no
-matter what `minimumSystemVersion` says: the 10.15 this app advertises is
-carried entirely by the x86_64 slice. Dropping it would not be a packaging
-change, it would raise the real minimum to 11.0 and strand every Intel Mac
-without saying so. CI checks both slices are present, and that the x86_64 one
-still targets the advertised version.
+Keeping the Intel slice is not sentiment. Rosetta translates x86_64 to ARM
+and never the reverse, so an Apple-silicon-only build runs on no Intel Mac at
+all, and Intel hardware runs every version of macOS this app supports. CI
+checks that both slices are present and that both are compiled for the
+advertised minimum.
 
 macOS 26 is the last release supporting Intel hardware, and those machines go
-on receiving security updates for about three years after it. That, rather than
-the arrival of newer Macs, is when the slice stops earning its place -- and
-`minimumSystemVersion` and `build.target` in `vite.config.ts` move with it.
+on receiving security updates for about three years after it. That, rather
+than the arrival of newer Macs, is when the slice stops earning its place.
 
 ### Other
 
-- **The panel is compiled for the oldest macOS supported**: Vite's default
-  target assumes a browser several years newer than the WebKit on macOS 10.15,
-  and React's minified code uses syntax that one cannot parse. `build.target`
-  in `vite.config.ts` is pinned accordingly; it has to move whenever
-  `minimumSystemVersion` does.
+- **The stylesheet sets the supported macOS, not the backend**: Tailwind
+  emits cascade layers and `@property`, which arrived in the WebKit that
+  shipped with macOS 13.3. Below that the panel does not degrade, it comes up
+  unstyled, so 13.3 is what `minimumSystemVersion` records. `build.target` in
+  `vite.config.ts` names the same Safari, so the bundled JavaScript never
+  outruns the browser the stylesheet already requires. The three move together
+  or not at all.
 - **Cheap gaussian blur**: the backdrop is blurred on a 1/8 scale copy and
   scaled back up. The result is indistinguishable from a heavy blur on the
   full-size image, for a fraction of the CPU.

@@ -9,6 +9,18 @@ import type { UiState } from "../types";
 import type { Run } from "../useAppState";
 import { useSyncedField } from "../useSyncedField";
 import {
+  button,
+  card,
+  field,
+  form,
+  hint,
+  primaryButton,
+  sectionTitle,
+  segmentedActive,
+  segmentedButton,
+  segmentedIdle,
+} from "../classes";
+import {
   CalendarIcon,
   CalendarPickIcon,
   RefreshIcon,
@@ -61,9 +73,9 @@ export function ModeCard({
   }
 
   return (
-    <section className="card">
-      <h2>Mode</h2>
-      <div className="segmented" role="group" aria-label="Image selection mode">
+    <section className={card}>
+      <h2 className={sectionTitle}>Mode</h2>
+      <div className="flex w-full" role="group" aria-label="Image selection mode">
         <SegmentedButton
           active={state?.mode === "daily"}
           onClick={() => {
@@ -94,16 +106,17 @@ export function ModeCard({
           Specific date
         </SegmentedButton>
       </div>
-      <p className="hint">
+      <p className={hint}>
         The wallpaper is updated once per day, at the local day change. "Refresh now"
         applies a new image straight away.
       </p>
 
       {pickerVisible && (
         <div>
-          <form id="date-form" onSubmit={applyDate}>
+          <form className={`${form} mb-[8px]`} onSubmit={applyDate}>
             <input
               ref={dateRef}
+              className={field}
               type="date"
               min="1995-06-16"
               max={maximumDate}
@@ -111,17 +124,19 @@ export function ModeCard({
               value={date}
               onChange={(event) => setDate(event.target.value)}
             />
-            <button type="submit">Apply</button>
+            <button className={button} type="submit">
+              Apply
+            </button>
           </form>
-          <p className="hint">
+          <p className={hint}>
             Available dates: from 16 June 1995 (the first published APOD) to today. A
             few rare days have no publication.
           </p>
         </div>
       )}
 
-      <h2>Screen fit</h2>
-      <div className="segmented" role="group" aria-label="Image fit">
+      <h2 className={`${sectionTitle} mt-[12px]`}>Screen fit</h2>
+      <div className="flex w-full" role="group" aria-label="Image fit">
         <SegmentedButton
           active={state?.fit_mode === "blur_fill"}
           onClick={() =>
@@ -141,7 +156,7 @@ export function ModeCard({
       </div>
 
       <button
-        className="primary"
+        className={primaryButton}
         type="button"
         onClick={() => run("refresh_now", undefined, "Checking for the latest image...")}
       >
@@ -165,7 +180,7 @@ function SegmentedButton({
   return (
     <button
       type="button"
-      className={active ? "active" : undefined}
+      className={`${segmentedButton} ${active ? segmentedActive : segmentedIdle}`}
       aria-pressed={active === true}
       onClick={onClick}
     >

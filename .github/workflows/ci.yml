@@ -129,10 +129,9 @@ jobs:
       # and a build that quietly produced one would look completely normal --
       # right up until an Intel user reports an app that will not open.
       #
-      # The deployment target is checked on the x86_64 slice for the same
-      # reason: macOS on arm64 starts at 11.0, so a version below that can only
-      # come from the Intel slice, and it is the only thing making the 10.15
-      # the app advertises true.
+      # The deployment target is checked on both slices: it is what makes the
+      # macOS version in the README true, and a slice built for something
+      # newer would refuse to launch on the machines the app claims to serve.
       - name: Check the bundle is really universal
         run: |
           set -euo pipefail
@@ -147,13 +146,15 @@ jobs:
           done
 
           declared=$(node -p "require('./src-tauri/tauri.conf.json').bundle.macOS.minimumSystemVersion")
-          minos=$(otool -arch x86_64 -l "$bin" \
-            | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
-          echo "x86_64 minos=$minos declared=$declared"
-          if [ "$minos" != "$declared" ]; then
-            echo "::error::x86_64 slice targets $minos but the app advertises $declared"
-            exit 1
-          fi
+          for arch in x86_64 arm64; do
+            minos=$(otool -arch "$arch" -l "$bin" \
+              | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
+            echo "$arch minos=$minos declared=$declared"
+            if [ "$minos" != "$declared" ]; then
+              echo "::error::$arch slice targets $minos but the app advertises $declared"
+              exit 1
+            fi
+          done
 
       - uses: actions/upload-artifact@v7
         with:
