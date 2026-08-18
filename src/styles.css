@@ -47,13 +47,6 @@
   box-sizing: border-box;
 }
 
-/* The HTML `hidden` attribute must always win, including on elements a rule
-   gives an explicit display to (the flex overlay, the error banner...).
-   Without this the blocking overlay would stay visible forever. */
-[hidden] {
-  display: none !important;
-}
-
 body {
   user-select: none;
   cursor: default;

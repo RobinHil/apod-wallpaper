@@ -7,8 +7,8 @@ by launching it again.
 
 Requires **macOS 10.15 or later**, on Apple silicon or Intel.
 
-Built with [Tauri 2](https://tauri.app): a Rust backend and a settings panel in
-plain TypeScript, HTML and CSS. No JavaScript framework.
+Built with [Tauri 2](https://tauri.app): a Rust backend and a settings panel
+written in React and TypeScript, styled with plain CSS.
 
 ---
 
@@ -304,10 +304,16 @@ apod-wallpaper/
 |  |- Info.plist                 # Menu bar app (LSUIElement) + Apple events usage
 |  |- capabilities/default.json
 |  `- tauri.conf.json
-|- src/                          # Panel frontend (vanilla TypeScript)
-|  |- main.ts                    # State rendering, commands to the backend
+|- src/                          # Panel frontend (React + TypeScript)
+|  |- main.tsx                   # Mounts the panel into index.html
+|  |- App.tsx                    # Composes the cards
+|  |- useAppState.ts             # Backend state, commands, pushed events
+|  |- useSyncedField.ts          # Text fields the backend also owns
+|  |- types.ts                   # UiState: the contract with the Rust side
+|  |- links.ts                   # APOD page and video URLs
+|  |- components/                # One file per card, plus the SVG icons
 |  `- styles.css                 # Light/dark theme (prefers-color-scheme)
-|- index.html                    # Panel structure (inline SVG icons)
+|- index.html                    # Mount point for the panel
 `- .github/workflows/ci.yml      # Lint/test gate + build matrix
 ```
 
@@ -432,8 +438,32 @@ picture; that counts as *not yet satisfied*, so the app applies it if it is new
 and keeps looking until today's appears. Pinning the request to the local date
 would skip today's picture entirely on some days.
 
+### The panel holds no state of its own
+
+The backend is the single source of truth. Every panel command returns a whole
+`UiState`, and the backend pushes one on `state-updated` whenever it changes
+something by itself -- the daily update, a screen change, a wake from sleep.
+The panel renders what it is given and never computes a setting locally, so
+the two can never disagree about what is applied.
+
+Two exceptions, both deliberate and both local to a component: the date picker
+stays visible from the moment "Specific date" is clicked, before any mode has
+actually changed, and the two text fields hold what is being typed. Those
+fields are re-seeded from every push, except while they have the focus --
+otherwise a background update landing mid-sentence would wipe out a
+half-entered API key.
+
+While a command is in flight the whole UI is covered by an overlay and pushed
+updates are ignored, so nothing moves under the pointer between the click and
+the result.
+
 ### Other
 
+- **The panel is compiled for the oldest macOS supported**: Vite's default
+  target assumes a browser several years newer than the WebKit on macOS 10.15,
+  and React's minified code uses syntax that one cannot parse. `build.target`
+  in `vite.config.ts` is pinned accordingly; it has to move whenever
+  `minimumSystemVersion` does.
 - **Cheap gaussian blur**: the backdrop is blurred on a 1/8 scale copy and
   scaled back up. The result is indistinguishable from a heavy blur on the
   full-size image, for a fraction of the CPU.
