@@ -430,9 +430,18 @@ A video is not a wallpaper, so a still is taken from it. Which still depends on
 how the video was published, and APOD does it two ways.
 
 Most video entries are **YouTube or Vimeo embeds**. The API has thumbnails for
-those, and asked for them (`thumbs=true`) it returns one. The maximum-resolution
-variant is tried first (`maxresdefault`, usually 1280x720), falling back to the
-thumbnail as published, which is all that exists for older videos.
+those, and asked for them (`thumbs=true`) it returns one. YouTube stores that
+one picture at several sizes and does not generate the big ones for every
+video, so they are tried biggest first -- `maxresdefault` (1280x720), then
+`sddefault` (640x480) -- with the thumbnail as published as the last resort.
+It is the same picture at each step; starting from more pixels only means less
+upscaling on the way to a screen-sized wallpaper.
+
+A thumbnail is what the uploader chose, which is not always a frame of the
+video: it is sometimes a cover with a title burned into it, and that is what
+lands on the desktop. Nothing here can tell the two apart, and it is left that
+way -- video APODs are a handful of days a year, and telling a cover from a
+frame would take OCR.
 
 The rest are served as a **plain file** on apod.nasa.gov -- an `.mp4`. The API
 has no thumbnail for those and returns an empty string in its place, so the file

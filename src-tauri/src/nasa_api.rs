@@ -71,13 +71,15 @@ impl Apod {
                 push(&mut sources, self.url.clone().map(Source::Image));
             }
             "video" => {
-                // The maxres variant is a guess -- it does not exist for older
-                // or low-definition videos -- so the thumbnail as published
-                // follows it as the fallback.
-                push(
-                    &mut sources,
-                    thumb.and_then(youtube_maxres).map(Source::Image),
-                );
+                // Each larger size is a guess -- YouTube does not generate all
+                // of them for every video -- so they are tried biggest first
+                // and the thumbnail as published stays the last resort.
+                for size in YOUTUBE_SIZES {
+                    push(
+                        &mut sources,
+                        thumb.and_then(|t| youtube_size(t, size)).map(Source::Image),
+                    );
+                }
                 push(&mut sources, thumb.map(str::to_string).map(Source::Image));
                 push(&mut sources, self.video_file());
             }
@@ -174,17 +176,26 @@ fn blank_to_none(field: &mut Option<String>) {
     }
 }
 
-/// For a standard YouTube thumbnail (0.jpg, hqdefault.jpg, ...), builds the URL
-/// of the highest resolution thumbnail (maxresdefault.jpg, usually 1280x720).
-/// Returns None when the URL is not a known YouTube thumbnail, in which case
-/// the caller keeps the original URL.
-fn youtube_maxres(url: &str) -> Option<String> {
+/// Larger copies of the published thumbnail to try first, biggest last resort
+/// last. YouTube stores one picture at several sizes, and does not generate
+/// the big ones for every video: `maxresdefault` (1280x720) is missing for
+/// older or low-definition uploads, and `sddefault` (640x480) is the next size
+/// down. It is the same picture either way -- the point is only to start from
+/// more pixels, since the wallpaper is composed at screen size and whatever is
+/// missing has to be invented by upscaling.
+const YOUTUBE_SIZES: [&str; 2] = ["maxresdefault", "sddefault"];
+
+/// Rewrites a standard YouTube thumbnail URL (0.jpg, hqdefault.jpg, ...) to
+/// another size. Returns None when the URL is not a known YouTube thumbnail,
+/// or already is the size asked for, in which case there is nothing to add
+/// that the published URL does not already cover.
+fn youtube_size(url: &str, size: &str) -> Option<String> {
     if !url.contains("img.youtube.com") && !url.contains("ytimg.com") {
         return None;
     }
     let (head, tail) = url.rsplit_once('/')?;
     let name = tail.strip_suffix(".jpg")?;
-    const VARIANTS: [&str; 8] = [
+    const KNOWN: [&str; 8] = [
         "0",
         "1",
         "2",
@@ -194,8 +205,8 @@ fn youtube_maxres(url: &str) -> Option<String> {
         "hqdefault",
         "sddefault",
     ];
-    if VARIANTS.contains(&name) {
-        Some(format!("{head}/maxresdefault.jpg"))
+    if KNOWN.contains(&name) && name != size {
+        Some(format!("{head}/{size}.jpg"))
     } else {
         None
     }
@@ -206,26 +217,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn upgrades_standard_youtube_thumbnails() {
+    fn rewrites_standard_youtube_thumbnails_to_another_size() {
         assert_eq!(
-            youtube_maxres("https://img.youtube.com/vi/abc123/0.jpg").as_deref(),
+            youtube_size("https://img.youtube.com/vi/abc123/0.jpg", "maxresdefault").as_deref(),
             Some("https://img.youtube.com/vi/abc123/maxresdefault.jpg")
         );
         assert_eq!(
-            youtube_maxres("https://i.ytimg.com/vi/abc123/hqdefault.jpg").as_deref(),
-            Some("https://i.ytimg.com/vi/abc123/maxresdefault.jpg")
+            youtube_size("https://i.ytimg.com/vi/abc123/hqdefault.jpg", "sddefault").as_deref(),
+            Some("https://i.ytimg.com/vi/abc123/sddefault.jpg")
         );
     }
 
     #[test]
     fn leaves_other_urls_untouched() {
-        assert_eq!(youtube_maxres("https://vimeo.com/thumb/42.jpg"), None);
         assert_eq!(
-            youtube_maxres("https://img.youtube.com/vi/abc123/maxresdefault.jpg"),
+            youtube_size("https://vimeo.com/thumb/42.jpg", "sddefault"),
             None
         );
         assert_eq!(
-            youtube_maxres("https://img.youtube.com/vi/abc123/0.png"),
+            youtube_size(
+                "https://img.youtube.com/vi/abc123/maxresdefault.jpg",
+                "maxresdefault"
+            ),
+            None
+        );
+        assert_eq!(
+            youtube_size("https://img.youtube.com/vi/abc123/0.png", "sddefault"),
+            None
+        );
+    }
+
+    /// A thumbnail already published at one of the sizes we would ask for must
+    /// not be listed twice.
+    #[test]
+    fn a_size_the_thumbnail_already_is_adds_nothing() {
+        assert_eq!(
+            youtube_size(
+                "https://img.youtube.com/vi/abc123/sddefault.jpg",
+                "sddefault"
+            ),
             None
         );
     }
@@ -283,8 +313,11 @@ mod tests {
         assert_eq!(apod.sources(), vec![]);
     }
 
+    /// The 2026-03-12 entry is the case this matters for: YouTube has no
+    /// `maxresdefault` for that video, so without `sddefault` in between the
+    /// app drops straight from 1280x720 to the published 480x360.
     #[test]
-    fn a_youtube_video_tries_the_maxres_thumbnail_then_the_published_one() {
+    fn a_youtube_video_tries_the_larger_sizes_before_the_published_one() {
         let apod = parse(
             r#"{
                 "date": "2026-01-02",
@@ -300,6 +333,7 @@ mod tests {
             apod.sources(),
             vec![
                 Source::Image("https://img.youtube.com/vi/abc123/maxresdefault.jpg".to_string()),
+                Source::Image("https://img.youtube.com/vi/abc123/sddefault.jpg".to_string()),
                 Source::Image("https://img.youtube.com/vi/abc123/0.jpg".to_string()),
             ]
         );
