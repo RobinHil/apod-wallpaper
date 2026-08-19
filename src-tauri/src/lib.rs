@@ -5,6 +5,7 @@ mod scheduler;
 mod settings;
 mod store;
 mod updater;
+mod video_frame;
 mod wallpaper;
 
 use serde::Serialize;

@@ -45,10 +45,11 @@ Three modes, selected in the settings panel:
   1995 and today. A few days in the archive have no publication; those are
   reported and the current wallpaper is kept.
 
-Some APOD entries are videos. No video file is served by the API (only a
-YouTube or Vimeo link), so the video's thumbnail is used as the wallpaper --
-the maximum-resolution one when YouTube has it. The panel says so and offers a
-link to watch the video.
+Some APOD entries are videos, and a still is used for those. YouTube and Vimeo
+entries use the thumbnail the API publishes -- the maximum-resolution one when
+YouTube has it. Entries published as a plain video file have no thumbnail, so a
+frame is decoded out of the file itself. The panel says which of the two is on
+the desktop and offers a link to watch the video.
 
 ### When the wallpaper changes
 
@@ -302,6 +303,7 @@ apod-wallpaper/
 |  |  |- nasa_api.rs             # APOD API calls, parsing, error taxonomy
 |  |  |- store.rs                # state.json + the two image files, atomic writes
 |  |  |- image_compose.rs        # Ratio handling: blurred fill or crop
+|  |  |- video_frame.rs          # A still frame out of a video, via AVFoundation
 |  |  |- wallpaper.rs            # Setting the desktop picture
 |  |  `- settings.rs             # API key, mode, fit; JSON persistence
 |  |- Info.plist                 # Menu bar app (LSUIElement) + Apple events usage
@@ -424,14 +426,34 @@ silent first start would be indistinguishable from one that failed.
 
 ### Video APODs
 
-Some entries are videos, and the API serves no video file -- only a YouTube or
-Vimeo embed link. An animated wallpaper would mean heavy dependencies for a
-handful of days a year, so the video's **thumbnail** is used instead: the
-maximum-resolution one for YouTube (`maxresdefault`, usually 1280x720), falling
-back to the standard thumbnail, which is all that exists for older videos. The
-panel flags it and links to the video; the menu bar appends "(video)" to the
-title. With no thumbnail at all, the current wallpaper is kept in daily mode,
-and another date is drawn in random mode.
+A video is not a wallpaper, so a still is taken from it. Which still depends on
+how the video was published, and APOD does it two ways.
+
+Most video entries are **YouTube or Vimeo embeds**. The API has thumbnails for
+those, and asked for them (`thumbs=true`) it returns one. The maximum-resolution
+variant is tried first (`maxresdefault`, usually 1280x720), falling back to the
+thumbnail as published, which is all that exists for older videos.
+
+The rest are served as a **plain file** on apod.nasa.gov -- an `.mp4`. The API
+has no thumbnail for those and returns an empty string in its place, so the file
+is downloaded and a frame is decoded out of it. The decoding is done by
+AVFoundation, which is part of macOS: the app links against it the same way it
+already does against AppKit to set the desktop picture, so this adds nothing for
+anyone to install, and the formats that work are the ones the system can play.
+
+The frame is not the first one -- videos open on black, on a fade-in, or on a
+title card. Four instants spread through the video are tried in turn, and the
+first one with enough contrast to be a picture rather than a flat colour is
+kept; if all four are flat, the least flat of them is. What gets archived is
+that frame as a JPEG, not the video: the stored original is what a later
+fit-mode or resolution change recomposes from, and keeping tens of megabytes to
+decode again each time would buy nothing.
+
+Either way the panel flags the entry and links to the video -- to YouTube or
+Vimeo for an embed, to the APOD page for a file, which is where a raw `.mp4` is
+meant to be watched -- and the menu bar appends "(video)" to the title. When
+nothing at all can be made of an entry, the current wallpaper is kept in daily
+mode, and another date is drawn in random mode.
 
 ### Daily mode sends no date
 

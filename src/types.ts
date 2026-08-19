@@ -22,6 +22,9 @@ export interface Applied {
   copyright: string | null;
   media_type: string;
   video_url: string | null;
+  /** URL the wallpaper was downloaded from: an image, or the video a frame
+   *  was taken out of. */
+  source_url: string;
 }
 
 export interface UiState {

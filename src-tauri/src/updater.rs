@@ -1,7 +1,7 @@
-use crate::nasa_api::{self, ApiError, Apod};
+use crate::nasa_api::{self, ApiError, Apod, Source};
 use crate::settings::{FitMode, Mode, Settings};
 use crate::store::{self, Applied};
-use crate::{AppData, SharedState, UpdateLock, image_compose, wallpaper};
+use crate::{AppData, SharedState, UpdateLock, image_compose, video_frame, wallpaper};
 use chrono::{Days, Local, NaiveDate};
 use image::DynamicImage;
 use std::fs;
@@ -109,21 +109,31 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
     let mut found: Option<Apod> = None;
     for _ in 0..MAX_RANDOM_ATTEMPTS {
         match nasa_api::fetch_apod(&client, &api_key, target).await {
-            Ok(apod) if apod.has_image() => {
+            Ok(apod) if apod.has_wallpaper() => {
                 found = Some(apod);
                 break;
             }
-            // A real publication with no usable image (a video with no
-            // thumbnail). Random mode simply draws again.
+            // A real publication nothing can be made of. Rare now that a
+            // video file yields a frame: it takes a media type with no URL at
+            // all. Random mode simply draws again.
             Ok(apod) => {
                 if settings.mode == Mode::Random {
                     target = Some(pick_random_date());
                     continue;
                 }
-                let message = format!(
-                    "The APOD for {} has no usable image -- current wallpaper kept.",
-                    apod.date
-                );
+                // Naming the reason matters here: nothing about the desktop
+                // changes, so without it the day reads as a silent failure.
+                let message = if apod.is_video() {
+                    format!(
+                        "The APOD for {} is a video with no thumbnail -- current wallpaper kept.",
+                        apod.date
+                    )
+                } else {
+                    format!(
+                        "The APOD for {} has no usable image -- current wallpaper kept.",
+                        apod.date
+                    )
+                };
                 finish(state, Some(message)).await;
                 return Ok(if settings.mode == Mode::Daily && apod.date < today {
                     Outcome::AwaitingPublication
@@ -181,25 +191,33 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
         }
     }
 
-    let url = apod
-        .preferred_download_url()
-        .expect("has_image() guarantees a URL");
-    let attempt = match fetch_and_decode(&client, &url).await {
-        Ok((bytes, image)) => Ok((url, bytes, image)),
-        Err(first) => match apod.fallback_download_url() {
-            Some(fallback) => fetch_and_decode(&client, &fallback)
-                .await
-                .map(|(bytes, image)| (fallback, bytes, image))
-                // The fallback is the consolation prize: when it fails too,
-                // the first failure is the one worth reporting.
-                .map_err(|_| first),
-            None => Err(first),
-        },
-    };
-    let (source_url, bytes, original) = match attempt {
-        Ok(v) => v,
-        Err(FetchError::Download(e)) => return Err(offline(state, e).await),
-        Err(FetchError::Decode(msg)) => return Err(fail(state, msg).await),
+    // Every source after the first is a fallback for the ones before it. The
+    // first failure is the one worth reporting: what follows it was already
+    // the consolation prize.
+    let mut attempt = None;
+    let mut failure = None;
+    for source in apod.sources() {
+        match fetch_and_decode(&client, &source).await {
+            Ok((bytes, image)) => {
+                attempt = Some((source.url().to_string(), bytes, image));
+                break;
+            }
+            Err(e) => {
+                if failure.is_none() {
+                    failure = Some(e);
+                }
+            }
+        }
+    }
+    let (source_url, bytes, original) = match (attempt, failure) {
+        (Some(v), _) => v,
+        (None, Some(FetchError::Download(e))) => return Err(offline(state, e).await),
+        (None, Some(FetchError::Decode(msg))) => return Err(fail(state, msg).await),
+        // `has_wallpaper()` listed at least one source, so the loop above
+        // either filled `attempt` or left the reason it could not.
+        (None, None) => {
+            return Err(fail(state, "Nothing to download for that APOD.".to_string()).await);
+        }
     };
 
     let record = install(
@@ -248,23 +266,66 @@ enum FetchError {
 /// `url` next to it would have worked.
 async fn fetch_and_decode(
     client: &reqwest::Client,
-    url: &str,
+    source: &Source,
 ) -> Result<(Vec<u8>, DynamicImage), FetchError> {
-    let bytes = nasa_api::download_image(client, url)
+    let bytes = nasa_api::download(client, source.url())
         .await
         .map_err(FetchError::Download)?;
 
-    // Decoding a full-resolution APOD is a second or more of pure CPU; the
-    // payload is handed to the blocking pool and handed straight back so it
-    // does not have to be copied.
+    // Decoding a full-resolution APOD is a second or more of pure CPU, and
+    // pulling a frame out of a video is the same order of magnitude; both are
+    // handed to the blocking pool. The payload is moved in and the result
+    // moved back out, so neither has to be copied.
+    let video = matches!(source, Source::Video(_));
+    let extension = file_extension(source.url());
     tauri::async_runtime::spawn_blocking(move || {
-        let decoded = image_compose::decode_bytes(&bytes)
-            .map_err(|e| format!("The downloaded file is unusable: {e}"))?;
-        Ok((bytes, decoded))
+        if video {
+            frame_from_video(&bytes, &extension)
+        } else {
+            let decoded = image_compose::decode_bytes(&bytes)
+                .map_err(|e| format!("The downloaded file is unusable: {e}"))?;
+            Ok((bytes, decoded))
+        }
     })
     .await
     .map_err(|e| FetchError::Decode(format!("Image task interrupted: {e}")))?
     .map_err(FetchError::Decode)
+}
+
+/// Turns a downloaded video into the still image the rest of the pipeline
+/// expects: a frame, and the bytes to archive alongside it.
+///
+/// The video itself is not kept. What is archived is the frame re-encoded as a
+/// JPEG, because that file is what a later fit-mode or resolution change
+/// recomposes from -- storing the video there would mean decoding it again on
+/// every such change, and keeping tens of megabytes to do it.
+///
+/// AVFoundation reads a file rather than a buffer, so the download is spilled
+/// to a temporary one and removed again whatever the outcome.
+fn frame_from_video(bytes: &[u8], extension: &str) -> Result<(Vec<u8>, DynamicImage), String> {
+    let path =
+        std::env::temp_dir().join(format!("apod-wallpaper-{}.{extension}", std::process::id()));
+    store::write_atomic(&path, bytes).map_err(|e| format!("Could not stage the video: {e}"))?;
+    let frame = video_frame::extract(&path);
+    let _ = fs::remove_file(&path);
+
+    let frame =
+        DynamicImage::ImageRgba8(frame.map_err(|e| format!("No frame from the video: {e}"))?);
+    let archived = image_compose::encode_jpeg(&frame.to_rgb8())?;
+    Ok((archived, frame))
+}
+
+/// Lower-case extension of a URL's file name, `"mp4"` by default: it only
+/// steers the system decoder's guess at the container, and the download has
+/// already been established as a video by then.
+fn file_extension(url: &str) -> String {
+    url.split(['?', '#'])
+        .next()
+        .and_then(|path| path.rsplit('/').next())
+        .and_then(|name| name.rsplit_once('.'))
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .filter(|ext| ext.chars().all(|c| c.is_ascii_alphanumeric()) && ext.len() <= 4)
+        .unwrap_or_else(|| "mp4".to_string())
 }
 
 /// Stores the validated original, composes the wallpaper, and only then moves
@@ -441,8 +502,13 @@ fn note(settings: &Settings, a: &Applied, today: &str) -> Option<String> {
         ));
     }
     if a.media_type == "video" {
+        let still = if nasa_api::is_video_file(&a.source_url) {
+            "a frame from it is"
+        } else {
+            "its thumbnail is"
+        };
         notes.push(format!(
-            "The APOD for {} is a video: its thumbnail is used as the wallpaper.",
+            "The APOD for {} is a video: {still} used as the wallpaper.",
             a.date
         ));
     }
@@ -537,6 +603,22 @@ pub fn validate_apod_date(raw: &str) -> Result<NaiveDate, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_staged_video_keeps_the_containers_extension() {
+        assert_eq!(
+            file_extension("https://apod.nasa.gov/apod/image/2608/a.mp4"),
+            "mp4"
+        );
+        assert_eq!(
+            file_extension("https://apod.nasa.gov/apod/image/2608/A.MOV"),
+            "mov"
+        );
+        assert_eq!(file_extension("https://example.com/a.m4v?v=2#t=10"), "m4v");
+        // Nothing that could be an extension: the decoder sniffs it anyway.
+        assert_eq!(file_extension("https://example.com/watch"), "mp4");
+        assert_eq!(file_extension("https://example.com/v1.2/watch"), "mp4");
+    }
 
     fn record(date: &str, applied_on: &str) -> Applied {
         Applied {

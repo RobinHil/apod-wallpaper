@@ -42,7 +42,11 @@ tauri-plugin-single-instance = "2.4.3"
 wallpaper = "3.2.0"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSWorkspace"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSNotification", "NSOperation", "NSString"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSNotification", "NSOperation", "NSString", "NSURL"] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVAsset", "AVAssetImageGenerator", "objc2-core-media", "objc2-core-graphics"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMTime"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage", "CGContext", "CGColorSpace", "CGBitmapContext"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 
 [profile.release]
 # A background utility: trade compile time for a smaller, faster binary.

@@ -17,9 +17,12 @@ pub struct Applied {
     pub explanation: String,
     #[serde(default)]
     pub copyright: Option<String>,
-    /// "image" or "video"; for a video the stored file is the thumbnail.
+    /// "image" or "video". For a video the stored file is a still: the
+    /// thumbnail the API published, or a frame decoded from the video itself
+    /// when it was served as a plain file and had no thumbnail.
     pub media_type: String,
-    /// Video link (YouTube/Vimeo) when `media_type` is "video".
+    /// The video itself when `media_type` is "video": a YouTube or Vimeo embed
+    /// link, or the URL of the file.
     #[serde(default)]
     pub video_url: Option<String>,
     /// URL the original was downloaded from.

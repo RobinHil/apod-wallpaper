@@ -50,6 +50,11 @@ const RATIO_TOLERANCE: f32 = 0.03;
 /// background. The 30% is worth more than the difference.
 const DOWNSCALE: FilterType = FilterType::CatmullRom;
 
+/// JPEG quality for everything this module writes. High enough that the
+/// artefacts are invisible on a desktop background, low enough that a
+/// screen-sized wallpaper stays a reasonable file.
+const JPEG_QUALITY: u8 = 92;
+
 /// Composes the final image at the exact screen size. No text is burned in:
 /// the wallpaper is the APOD as published, and the metadata (date, copyright)
 /// stays visible in the menu bar and the panel.
@@ -152,6 +157,19 @@ fn darken(img: &mut RgbImage, factor: f32) {
 /// The bytes reach the disk before this returns: the caller renames the file
 /// into place straight afterwards, and a rename that outlives its own contents
 /// would leave an empty wallpaper behind after a power loss.
+/// Encodes to JPEG in memory, at the quality [`save_jpeg`] writes with.
+///
+/// This is for a payload that has no file of its own to be read back from --
+/// a frame lifted out of a video, which has to be archived as an image like
+/// any download.
+pub fn encode_jpeg(img: &RgbImage) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, JPEG_QUALITY);
+    img.write_with_encoder(encoder)
+        .map_err(|e| format!("JPEG encoding failed: {e}"))?;
+    Ok(bytes)
+}
+
 pub fn save_jpeg(img: &RgbImage, path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -160,7 +178,7 @@ pub fn save_jpeg(img: &RgbImage, path: &Path) -> Result<(), String> {
     let file =
         fs::File::create(path).map_err(|e| format!("Could not create the wallpaper file: {e}"))?;
     let mut writer = BufWriter::new(file);
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 92);
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, JPEG_QUALITY);
     img.write_with_encoder(encoder)
         .map_err(|e| format!("JPEG encoding failed: {e}"))?;
     writer
