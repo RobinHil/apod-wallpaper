@@ -3,6 +3,7 @@ name = "apod-wallpaper"
 version = "0.1.0"
 description = "Sets NASA's Astronomy Picture of the Day as your desktop wallpaper"
 authors = ["Robin HILAIRE"]
+license = "MIT"
 repository = "https://github.com/RobinHil/apod-wallpaper"
 edition = "2024"
 

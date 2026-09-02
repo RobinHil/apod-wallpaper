@@ -7,8 +7,21 @@ by launching it again.
 
 Requires **macOS 13.3 or later**, on Apple silicon or Intel.
 
+macOS is the only platform supported today. Windows and Linux are the goal:
+Tauri already builds for both, and the parts that are genuinely tied to macOS
+are few, essentially setting the desktop picture, watching for screen changes
+and wake-ups, and decoding a video still. Everything else, the scheduling, the
+API client, the image composition and the panel, is portable as it stands.
+
 Built with [Tauri 2](https://tauri.app): a Rust backend and a settings panel
 written in React and TypeScript, styled with Tailwind CSS.
+
+> [!NOTE]
+> This project was written with heavy AI assistance, and is stated up front so
+> you can read the code knowing where it came from. The design decisions, the
+> review of every change and the testing on real hardware are mine; a large part
+> of the code itself was generated. Judge it on what it does, and on the reasons
+> given in [Design notes](#design-notes), rather than on who typed it.
 
 ---
 
@@ -46,7 +59,7 @@ Three modes, selected in the settings panel:
   reported and the current wallpaper is kept.
 
 Some APOD entries are videos, and a still is used for those. YouTube and Vimeo
-entries use the thumbnail the API publishes -- the maximum-resolution one when
+entries use the thumbnail the API publishes, the maximum-resolution one when
 YouTube has it. Entries published as a plain video file have no thumbnail, so a
 frame is decoded out of the file itself. The panel says which of the two is on
 the desktop and offers a link to watch the video.
@@ -59,13 +72,13 @@ attempts an update, then sleeps until just after the next midnight.
 
 Three things end that sleep early:
 
-- **A screen change** -- a new resolution, a scale change, a display plugged
+- **A screen change** : a new resolution, a scale change, a display plugged
   in or unplugged. The wallpaper is recomposed for the new size from the
   original already on disk, without touching the network.
-- **Waking from sleep** -- the pending wait was measured against a clock that
+- **Waking from sleep** : the pending wait was measured against a clock that
   stops while the Mac is asleep, so the task is told about the wake-up and
   re-reads the wall clock.
-- **A failure** -- no network, an exhausted API quota, an API outage. The app
+- **A failure** : no network, an exhausted API quota, an API outage. The app
   retries with an exponential backoff (10 s, 20 s, 40 s, ...) with ±20 %
   jitter, capped at 15 minutes, until it succeeds. The wallpaper in place is
   never disturbed by a failure.
@@ -73,7 +86,7 @@ Three things end that sleep early:
 When today's picture has not been published yet, the most recent one is applied
 and the app looks again every 30 minutes rather than hammering the API.
 
-"Refresh now", in the panel, applies an image immediately -- including
+"Refresh now", in the panel, applies an image immediately, including
 re-applying the current one, which is what restores it if you have set another
 desktop picture by hand since.
 
@@ -99,7 +112,7 @@ button. Closing it leaves the app running in the background.
 The **menu bar item** shows the current image's title, date and copyright, and
 opens the panel or quits. Everything it offers exists in the panel as well.
 
-The app has no Dock icon -- it is a background utility, declared as such
+The app has no Dock icon, it is a background utility, declared as such
 through `LSUIElement`. Starting it puts nothing on screen: it goes straight to
 the menu bar and sets to work. The panel is only ever opened deliberately,
 either from the menu bar item or by launching the application again from the
@@ -143,7 +156,7 @@ current/<date>.<ext>                     the downloaded original
 current/wall-<date>-<fit>-<w>x<h>.jpg    the composition set as the wallpaper
 ```
 
-Only one image is kept -- the one on your desktop. Everything else is deleted
+Only one image is kept, the one on your desktop. Everything else is deleted
 as soon as a new wallpaper has been applied, so the directory stays under a few
 megabytes.
 
@@ -172,7 +185,7 @@ targets have to be installed for it:
 
 ```bash
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-npm run bundle -- --target universal-apple-darwin
+npm run bundle, --target universal-apple-darwin
 ```
 
 Naming a target moves the output under
@@ -184,8 +197,8 @@ Before opening a pull request, the same checks CI runs:
 ```bash
 cd src-tauri
 cargo fmt --all --check
-cargo clippy --locked -- -D warnings                 # lints, as the app is shipped
-cargo clippy --locked --all-targets -- -D warnings   # lints, tests included
+cargo clippy --locked, -D warnings                 # lints, as the app is shipped
+cargo clippy --locked --all-targets, -D warnings   # lints, tests included
 cargo test --locked
 cd ..
 npx tsc --noEmit
@@ -193,7 +206,7 @@ npx tsc --noEmit
 
 Clippy twice is not a typo: `--all-targets` builds the tests, whose
 dev-dependencies can supply a feature the library needs but never declares.
-That builds, and the release build -- which has no dev-dependencies -- then
+That builds, and the release build, which has no dev-dependencies, then
 fails. The first command is the one that matches what users install.
 
 ---
@@ -206,7 +219,7 @@ one `.dmg` and it is universal: the same file runs on Apple silicon and on
 Intel.
 
 Open the `.dmg` and drag the application into `Applications`. The builds are
-**not signed** -- an Apple code-signing certificate is a paid subscription --
+**not signed**, an Apple code-signing certificate is a paid subscription --
 so the first launch is refused with a message about the app being damaged. That
 is Gatekeeper's quarantine flag, not a corrupted download. Clear it once:
 
@@ -215,14 +228,14 @@ xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"
 ```
 
 Alternatively, right-click the app, choose *Open* and confirm, or allow it from
-*System Settings → Privacy & Security* right after the failed launch.
+*System Settings > Privacy & Security* right after the failed launch.
 
 The first time the app sets the wallpaper, macOS asks for permission to control
 **System Events**: that Apple event is how the desktop picture is set. If you
-refuse, re-enable it under *System Settings → Privacy & Security →
+refuse, re-enable it under *System Settings > Privacy & Security >
 Automation*.
 
-Launching it opens the panel once -- the only time it does -- applies the
+Launching it opens the panel once, the only time it does, applies the
 first wallpaper and leaves the app running in the background.
 
 ---
@@ -232,7 +245,7 @@ first wallpaper and leaves the app running in the background.
 The application does not register itself: a login item is a change to your
 session, and you make it yourself, once.
 
-Open *System Settings → General → Login Items & Extensions*, and under **Open
+Open *System Settings > General > Login Items & Extensions*, and under **Open
 at Login** add `/Applications/APOD Wallpaper.app`. That is all there is to it.
 
 Nothing appears when you log in. Earlier versions needed a launch agent here,
@@ -252,7 +265,7 @@ rm -f ~/Library/LaunchAgents/com.rh.apod-wallpaper.plist
 
 Quit the application first, from the panel or the menu bar.
 
-Remove it from *System Settings → General → Login Items & Extensions* if you
+Remove it from *System Settings > General > Login Items & Extensions* if you
 added it there, then:
 
 ```bash
@@ -278,7 +291,7 @@ and 50 per day, per IP address**. The app makes at most a handful of requests a
 day, so that is usually plenty; a personal key is worth having if you share an
 IP address with other users of the API.
 
-1. Request one at <https://api.nasa.gov/> -- a short form, the key arrives by
+1. Request one at <https://api.nasa.gov/>, a short form, the key arrives by
    email.
 2. Open the panel, paste it into the "NASA API key" field, click "Save".
 
@@ -332,7 +345,7 @@ apod-wallpaper/
 The application is meant to be invisible in Activity Monitor. There is exactly
 one background task, and it does this:
 
-1. Attempt an update. There is no separate "am I online?" probe -- the fetch is
+1. Attempt an update. There is no separate "am I online?" probe, the fetch is
    the probe, which is one round trip instead of two.
 2. On success, sleep until the next local day change.
 3. On failure, or when today's APOD is not published yet, retry on a backoff
@@ -362,7 +375,7 @@ network. A capped backoff is cheaper than the machinery to avoid it.
 ### Nothing is redone that does not need to be
 
 `state.json` records the applied image and the inputs its composition depended
-on -- fit mode and screen size. At startup, if that record already answers the
+on, fit mode and screen size. At startup, if that record already answers the
 current settings and both files are on disk, the app does nothing at all: no
 API call, no download, no wallpaper-set call. Restarting five times in a day
 costs five `state.json` reads.
@@ -370,7 +383,7 @@ costs five `state.json` reads.
 Changing the fit mode, or moving to a display with a different resolution,
 recomposes from the stored original without touching the network.
 
-When macOS reports no main display at all -- lid closed, no external screen --
+When macOS reports no main display at all, lid closed, no external screen --
 the size the wallpaper was last composed for is reused. That is not a
 resolution change, and recomposing for a guessed size would replace a correct
 wallpaper with a wrong one.
@@ -394,7 +407,7 @@ has to live with:
   refuses the event outright rather than prompting, and the first wallpaper
   would fail with nothing the user could act on.
 - The call is thoroughly blocking, seconds of it when the desktop is busy, so
-  it runs on tokio's blocking pool -- never on a runtime worker, where it would
+  it runs on tokio's blocking pool, never on a runtime worker, where it would
   hold up every panel command queued behind it.
 
 ### The menu bar item is optional
@@ -413,7 +426,7 @@ them, which reach the app by two different routes.
 
 Clicking the menu bar item is the direct one. Launching the application again
 is the indirect one, and it splits in two: for the installed `.app`, macOS does
-not start a second process at all -- LaunchServices reactivates the one already
+not start a second process at all, LaunchServices reactivates the one already
 running and sends it `applicationShouldHandleReopen:`, surfacing in Tauri as
 `RunEvent::Reopen`. Running the binary inside the bundle directly *does* start
 a second process, and there the single-instance plugin hands the launch to the
@@ -432,25 +445,25 @@ how the video was published, and APOD does it two ways.
 Most video entries are **YouTube or Vimeo embeds**. The API has thumbnails for
 those, and asked for them (`thumbs=true`) it returns one. YouTube stores that
 one picture at several sizes and does not generate the big ones for every
-video, so they are tried biggest first -- `maxresdefault` (1280x720), then
-`sddefault` (640x480) -- with the thumbnail as published as the last resort.
+video, so they are tried biggest first, `maxresdefault` (1280x720), then
+`sddefault` (640x480), with the thumbnail as published as the last resort.
 It is the same picture at each step; starting from more pixels only means less
 upscaling on the way to a screen-sized wallpaper.
 
 A thumbnail is what the uploader chose, which is not always a frame of the
 video: it is sometimes a cover with a title burned into it, and that is what
 lands on the desktop. Nothing here can tell the two apart, and it is left that
-way -- video APODs are a handful of days a year, and telling a cover from a
+way, video APODs are a handful of days a year, and telling a cover from a
 frame would take OCR.
 
-The rest are served as a **plain file** on apod.nasa.gov -- an `.mp4`. The API
+The rest are served as a **plain file** on apod.nasa.gov, an `.mp4`. The API
 has no thumbnail for those and returns an empty string in its place, so the file
 is downloaded and a frame is decoded out of it. The decoding is done by
 AVFoundation, which is part of macOS: the app links against it the same way it
 already does against AppKit to set the desktop picture, so this adds nothing for
 anyone to install, and the formats that work are the ones the system can play.
 
-The frame is not the first one -- videos open on black, on a fade-in, or on a
+The frame is not the first one, videos open on black, on a fade-in, or on a
 title card. Four instants spread through the video are tried in turn, and the
 first one with enough contrast to be a picture rather than a flat colour is
 kept; if all four are flat, the least flat of them is. What gets archived is
@@ -458,9 +471,9 @@ that frame as a JPEG, not the video: the stored original is what a later
 fit-mode or resolution change recomposes from, and keeping tens of megabytes to
 decode again each time would buy nothing.
 
-Either way the panel flags the entry and links to the video -- to YouTube or
+Either way the panel flags the entry and links to the video, to YouTube or
 Vimeo for an embed, to the APOD page for a file, which is where a raw `.mp4` is
-meant to be watched -- and the menu bar appends "(video)" to the title. When
+meant to be watched, and the menu bar appends "(video)" to the title. When
 nothing at all can be made of an entry, the current wallpaper is kept in daily
 mode, and another date is drawn in random mode.
 
@@ -477,7 +490,7 @@ would skip today's picture entirely on some days.
 
 The backend is the single source of truth. Every panel command returns a whole
 `UiState`, and the backend pushes one on `state-updated` whenever it changes
-something by itself -- the daily update, a screen change, a wake from sleep.
+something by itself, the daily update, a screen change, a wake from sleep.
 The panel renders what it is given and never computes a setting locally, so
 the two can never disagree about what is applied.
 
@@ -497,7 +510,7 @@ the result.
 The colours are Tailwind theme tokens: `--color-card` in the `@theme` block of
 `styles.css` is what makes `bg-card`, `border-card` and `text-card` exist. Dark
 mode redefines those same variables under `prefers-color-scheme`, which is why
-no component carries a `dark:` variant -- the utilities already point at the
+no component carries a `dark:` variant, the utilities already point at the
 variable, and the variable changes underneath them.
 
 Two of Tailwind's preflight rules are handed back to WebKit in the same file.
@@ -515,7 +528,7 @@ colours instead of layering them over a base.
 ### One bundle for both architectures
 
 A release is a single universal `.dmg` rather than one per architecture. It is
-twice the size -- 10 MB instead of 5 -- which for something downloaded once is
+twice the size, 10 MB instead of 5, which for something downloaded once is
 a better trade than asking every user which of two files they need.
 
 Keeping the Intel slice is not sentiment. Rosetta translates x86_64 to ARM
@@ -563,7 +576,7 @@ application again from Spotlight or the Finder to bring the panel back up.
 **The wallpaper does not change.** Open the panel: every failure is shown
 there, in a banner or in the status line at the bottom. If nothing is reported
 and the desktop still does not change, the Apple event is most likely being
-denied -- check *System Settings → Privacy & Security → Automation* and make
+denied, check *System Settings > Privacy & Security > Automation* and make
 sure **APOD Wallpaper** is allowed to control **System Events**. To see what
 the desktop is currently pointing at:
 
@@ -584,7 +597,7 @@ for its icon in the menu bar:
 pgrep -a apod-wallpaper
 ```
 
-If it is not running, confirm the entry under *System Settings → General →
+If it is not running, confirm the entry under *System Settings > General >
 Login Items & Extensions* points at `/Applications/APOD Wallpaper.app` and is
 switched on.
 
@@ -598,14 +611,36 @@ switched on.
   or resizing a display is noticed and recomposed for.
 - **The Apple event permission** is asked for once and has to be granted. A
   denied automation permission is silent from the app's side: the event fails,
-  the error reaches the panel, but nothing can re-prompt for it -- it has to be
+  the error reaches the panel, but nothing can re-prompt for it, it has to be
   re-enabled in System Settings.
 - **Unsigned builds**: the Gatekeeper step in the install section is needed on
   every download. Signing properly requires a paid Apple Developer certificate.
+- **macOS only, for now**: three pieces are written against Apple frameworks,
+  namely setting the desktop picture, watching for screen and wake events, and
+  pulling a still out of a video. Porting to Windows and Linux means swapping
+  those three, not rewriting the app.
 
 ---
 
 ## Licence
 
-- Project code: to be defined by the repository owner.
-- APOD images carrying a copyright notice remain the property of their authors.
+The project code is released under the MIT licence, see [LICENSE](LICENSE).
+
+Everything it depends on is permissively licensed and compatible with that
+choice: Tauri, serde, reqwest, tokio, image, rand, chrono and the `objc2`
+crates are MIT or Apache-2.0, and the `wallpaper` crate is Unlicense. No
+GPL-licensed component is linked in. Video stills are decoded through Apple's
+AVFoundation rather than a bundled decoder, so no codec library is
+redistributed here either.
+
+The images are a separate matter, and they are not mine to license:
+
+- APOD entries **carrying a copyright notice** remain the property of their
+  authors. The app displays that notice with the image, in the panel and in the
+  menu bar, and never strips it.
+- Entries **without** such a notice are usually NASA material, which is in the
+  public domain in the United States. NASA's media guidelines still ask that its
+  imagery not be used in a way that implies endorsement.
+
+The application downloads these images for your own desktop. Redistributing
+them is your responsibility, not the application's.
