@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=APOD Wallpaper
+Comment=NASA's Astronomy Picture of the Day as your desktop wallpaper
+Exec=apod-wallpaper
+Icon=apod-wallpaper
+Terminal=false
+Categories=Utility;
+Keywords=wallpaper;background;desktop;NASA;astronomy;APOD;
+
+# Deliberately visible in the application grid, and deliberately not marked
+# NoDisplay. GNOME has no system tray without an extension, so launching the
+# application again is the one route back to the settings panel that is always
+# there -- the single-instance plugin hands that launch to the copy already
+# running instead of starting a second one.
+#
+# Nothing appears when it starts, which is the whole point of a background
+# utility, so the shell is told not to wait for a window that is not coming.
+StartupNotify=false

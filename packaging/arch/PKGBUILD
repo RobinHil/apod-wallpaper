@@ -1,0 +1,87 @@
+# Maintainer: Robin HILAIRE <hilairerob84@gmail.com>
+#
+# Arch is the one target Tauri has no bundler for, so the package is assembled
+# here instead: the binary, the desktop entry next to this file, and the icons
+# the Tauri bundle would have installed on Debian or Fedora.
+#
+# This builds a *published release*, not the working tree: `makepkg` fetches
+# the tarball GitHub generates for the `v$pkgver` tag. So it can only succeed
+# once a tag exists that contains what it needs -- notably `pnpm-lock.yaml`,
+# without which `pnpm install --frozen-lockfile` below refuses to run. Pointing
+# it at a tag older than the pnpm migration fails for exactly that reason.
+#
+# Before publishing a new version to the AUR, bump `pkgver` to the new tag and
+# run `updpkgsums` in this directory to replace the SKIP below with that
+# tarball's checksum.
+
+pkgname=apod-wallpaper
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day"
+arch=('x86_64' 'aarch64')
+url="https://github.com/RobinHil/apod-wallpaper"
+license=('MIT')
+
+# webkit2gtk and gtk3 are what Tauri's Linux backend renders the panel with.
+# GStreamer is only ever used for a video APOD, but the binary links it rather
+# than opening it on demand, so it is a hard dependency all the same;
+# gst-plugins-good carries the MP4 demuxer and the rotation filter.
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'gst-plugins-base'
+  'gst-plugins-good'
+)
+makedepends=('rust' 'nodejs' 'pnpm' 'pkgconf')
+
+# The tray library really is optional: it is loaded at runtime rather than
+# linked, and the application is built to run with no tray at all. Under GNOME
+# it takes the shell extension as well before any icon appears.
+optdepends=(
+  'libayatana-appindicator: tray icon'
+  'gnome-shell-extension-appindicator: show that tray icon under GNOME'
+  'gst-libav: decode video APODs published as H.264 files'
+)
+
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+
+  # Keep pnpm's store inside the build directory: a package build must not
+  # write to the user's home.
+  export PNPM_HOME="$srcdir/.pnpm"
+  export npm_config_store_dir="$srcdir/.pnpm-store"
+
+  pnpm install --frozen-lockfile
+  # The panel, into dist/, which `tauri::generate_context!` embeds at compile
+  # time. `cargo build` alone would embed whatever dist/ happened to hold.
+  pnpm build
+
+  cd src-tauri
+  cargo build --release --locked
+}
+
+check() {
+  cd "$pkgname-$pkgver/src-tauri"
+  cargo test --release --locked
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+
+  install -Dm755 "src-tauri/target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+  # Installed under the name Tauri's own bundler uses for the .deb and the
+  # .rpm, spaces and all, so that there is one desktop entry name to document
+  # rather than one per packaging route.
+  install -Dm644 "packaging/arch/$pkgname.desktop" \
+    "$pkgdir/usr/share/applications/APOD Wallpaper.desktop"
+
+  for size in 32 64 128; do
+    install -Dm644 "src-tauri/icons/${size}x${size}.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$pkgname.png"
+  done
+}

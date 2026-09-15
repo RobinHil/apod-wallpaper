@@ -1,9 +1,14 @@
+mod commands;
 mod image_compose;
+mod memory;
 mod nasa_api;
 mod os_events;
+mod panel;
 mod scheduler;
+mod screen;
 mod settings;
 mod store;
+mod tray;
 mod updater;
 mod video_frame;
 mod wallpaper;
@@ -13,46 +18,37 @@ use settings::{FitMode, Mode, Settings};
 use std::path::PathBuf;
 use std::sync::Arc;
 use store::{Applied, Store};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
-struct AppData {
-    settings: Settings,
-    settings_path: PathBuf,
-    store: Store,
-    offline: bool,
-    status_message: Option<String>,
-    last_check: Option<String>,
+pub struct AppData {
+    pub settings: Settings,
+    pub settings_path: PathBuf,
+    pub store: Store,
+    pub offline: bool,
+    pub status_message: Option<String>,
+    pub last_check: Option<String>,
 }
 
-struct SharedState(Arc<Mutex<AppData>>);
+pub struct SharedState(Arc<Mutex<AppData>>);
 /// Serialises updates: the scheduler and the panel never run one at the same
 /// time, and whichever arrives second simply waits.
-struct UpdateLock(Mutex<()>);
-
-/// Handles to the menu bar entries whose text changes over time. That menu is
-/// read-only: it shows the title and the credits.
-struct TrayHandles {
-    title: MenuItem<Wry>,
-    info: MenuItem<Wry>,
-}
+pub struct UpdateLock(Mutex<()>);
 
 /// State pushed to the settings panel (frontend).
 #[derive(Clone, Serialize)]
-struct UiState {
-    mode: Mode,
-    fit_mode: FitMode,
-    api_key: String,
-    specific_date: String,
-    offline: bool,
-    status_message: Option<String>,
-    last_check: Option<String>,
-    current: Option<Applied>,
+pub struct UiState {
+    pub mode: Mode,
+    pub fit_mode: FitMode,
+    pub api_key: String,
+    pub specific_date: String,
+    pub offline: bool,
+    pub status_message: Option<String>,
+    pub last_check: Option<String>,
+    pub current: Option<Applied>,
 }
 
-fn ui_state(d: &AppData) -> UiState {
+pub(crate) fn ui_state(d: &AppData) -> UiState {
     UiState {
         mode: d.settings.mode,
         fit_mode: d.settings.fit_mode,
@@ -65,293 +61,17 @@ fn ui_state(d: &AppData) -> UiState {
     }
 }
 
-async fn current_ui(app: &AppHandle) -> UiState {
+pub async fn current_ui(app: &AppHandle) -> UiState {
     let state = app.state::<SharedState>();
     let d = state.0.lock().await;
     ui_state(&d)
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut out: String = s.chars().take(max.saturating_sub(3)).collect();
-    out.push_str("...");
-    out
-}
-
-/// Physical resolution of the monitor the wallpaper is composed for -- the
-/// main display, the one carrying the menu bar. The others get the same image
-/// (documented limitation in the README).
-///
-/// `None` when macOS reports no main display at all, which happens with the
-/// lid closed and no external screen attached. That is not a resolution
-/// change, and the caller must not treat it as one: recomposing for a guessed
-/// size would replace a correct wallpaper with a wrong one.
-fn screen_size(app: &AppHandle) -> Option<(u32, u32)> {
-    let monitor = app.primary_monitor().ok()??;
-    let size = monitor.size();
-    let (min_w, min_h) = image_compose::MIN_SCREEN;
-    Some((size.width.max(min_w), size.height.max(min_h)))
-}
-
-/// Label of the settings panel window, matching `capabilities/default.json`.
-const PANEL: &str = "main";
-
-/// Opens the settings panel, creating the window if it does not exist.
-///
-/// The window is built on demand and destroyed when closed, so no webview
-/// process is resident while the app sits in the background -- which is where
-/// it spends essentially all of its life. Nothing is lost when it closes:
-/// every setting is persisted by the backend as it is changed.
-fn show_panel(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(PANEL) {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-        return;
-    }
-
-    let built = WebviewWindowBuilder::new(app, PANEL, WebviewUrl::default())
-        .title("APOD Wallpaper")
-        .inner_size(440.0, 640.0)
-        .resizable(false)
-        .maximizable(false)
-        .center()
-        // Hidden from the app switcher: the menu bar is the way back to a
-        // background utility, and the activation policy set at startup keeps
-        // it out of the Dock anyway.
-        .skip_taskbar(true)
-        .build();
-
-    match built {
-        Ok(window) => {
-            let _ = window.set_focus();
-        }
-        Err(e) => eprintln!("could not open the settings panel: {e}"),
-    }
-}
-
-/// Pushes the current state to the panel and to the menu bar labels.
-async fn refresh_ui(app: &AppHandle) {
+/// Pushes the current state to the panel and to the tray labels.
+pub(crate) async fn refresh_ui(app: &AppHandle) {
     let ui = current_ui(app).await;
     let _ = app.emit("state-updated", &ui);
-
-    if let Some(tray) = app.try_state::<TrayHandles>() {
-        let title = ui
-            .current
-            .as_ref()
-            .map(|c| {
-                let t = truncate(&c.title, 60);
-                if c.media_type == "video" {
-                    format!("{t} (video)")
-                } else {
-                    t
-                }
-            })
-            .unwrap_or_else(|| "No image loaded".to_string());
-        let info = ui
-            .current
-            .as_ref()
-            .map(|c| match &c.copyright {
-                Some(cr) => format!("{} -- (c) {}", c.date, truncate(cr, 45)),
-                None => format!("{} -- NASA (public domain)", c.date),
-            })
-            .unwrap_or_else(|| "-".to_string());
-        let _ = tray.title.set_text(title);
-        let _ = tray.info.set_text(info);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Commands exposed to the panel. Each command waits for the operation to fully
-// finish before answering: the frontend blocks its UI meanwhile and shows any
-// error. No work is started in the background without its result being
-// reported.
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-async fn get_state(app: AppHandle) -> Result<UiState, String> {
-    Ok(current_ui(&app).await)
-}
-
-/// Switches mode and applies it.
-///
-/// The new mode is persisted before the update runs and is *not* rolled back
-/// if it fails: a mode is a standing preference, so a network outage should
-/// leave the app aiming at what the user asked for and let the scheduler retry.
-/// `set_specific_date` deliberately does the opposite -- see there.
-#[tauri::command]
-async fn set_mode(app: AppHandle, mode: Mode) -> Result<UiState, String> {
-    let changed = {
-        let state = app.state::<SharedState>();
-        let mut d = state.0.lock().await;
-        // Specific-date mode requires a valid date already stored; the panel
-        // normally goes through set_specific_date.
-        if mode == Mode::Specific {
-            updater::validate_apod_date(&d.settings.specific_date)?;
-        }
-        let changed = d.settings.mode != mode;
-        if changed {
-            d.settings.mode = mode;
-            d.settings.save(&d.settings_path)?;
-        }
-        changed
-    };
-    // Random is the one mode that is not idempotent: asking for it again means
-    // "draw another one", so it updates even when the mode did not change.
-    // Doing nothing there would leave the button visibly dead.
-    if changed || mode == Mode::Random {
-        updater::update(&app, true).await?;
-    }
-    Ok(current_ui(&app).await)
-}
-
-#[tauri::command]
-async fn set_specific_date(app: AppHandle, date: String) -> Result<UiState, String> {
-    let parsed = updater::validate_apod_date(&date)?;
-    let previous = {
-        let state = app.state::<SharedState>();
-        let mut d = state.0.lock().await;
-        let previous = (d.settings.mode, d.settings.specific_date.clone());
-        d.settings.mode = Mode::Specific;
-        d.settings.specific_date = parsed.format("%Y-%m-%d").to_string();
-        d.settings.save(&d.settings_path)?;
-        previous
-    };
-
-    if let Err(msg) = updater::update(&app, true).await {
-        // Day with no publication, network outage...: restore the previous
-        // mode so the displayed state stays truthful. The current wallpaper
-        // was not touched and the error is shown to the user.
-        //
-        // Unlike `set_mode`, this does roll back: a date the archive has no
-        // entry for is wrong permanently, and retrying it forever would pin
-        // the app to a request that can never succeed.
-        {
-            let state = app.state::<SharedState>();
-            let mut d = state.0.lock().await;
-            d.settings.mode = previous.0;
-            d.settings.specific_date = previous.1;
-            let _ = d.settings.save(&d.settings_path);
-        }
-        refresh_ui(&app).await;
-        return Err(format!(
-            "Could not apply the APOD for {}: {msg} The current wallpaper is kept.",
-            parsed.format("%d/%m/%Y")
-        ));
-    }
-    Ok(current_ui(&app).await)
-}
-
-#[tauri::command]
-async fn set_fit_mode(app: AppHandle, fit: FitMode) -> Result<UiState, String> {
-    {
-        let state = app.state::<SharedState>();
-        let mut d = state.0.lock().await;
-        if d.settings.fit_mode == fit {
-            return Ok(ui_state(&d));
-        }
-        d.settings.fit_mode = fit;
-        d.settings.save(&d.settings_path)?;
-    }
-    // Not forced: the image on disk still matches the mode, so this recomposes
-    // it locally instead of going back to the API.
-    updater::update(&app, false).await?;
-    Ok(current_ui(&app).await)
-}
-
-/// Saves the key and immediately puts it to use.
-///
-/// The whole point of typing a key is usually that DEMO_KEY's quota ran out,
-/// so saving it and then sitting on the failed state until the next backoff
-/// tick would answer the user's problem with a shrug. A failure here leaves
-/// the key saved -- it is what the user asked for -- and reports the error.
-#[tauri::command]
-async fn set_api_key(app: AppHandle, key: String) -> Result<UiState, String> {
-    let changed = {
-        let state = app.state::<SharedState>();
-        let mut d = state.0.lock().await;
-        let key = key.trim().to_string();
-        let changed = d.settings.api_key != key;
-        if changed {
-            d.settings.api_key = key;
-            d.settings.save(&d.settings_path)?;
-        }
-        changed
-    };
-    if changed {
-        updater::update(&app, true).await?;
-    }
-    Ok(current_ui(&app).await)
-}
-
-#[tauri::command]
-async fn refresh_now(app: AppHandle) -> Result<UiState, String> {
-    updater::update(&app, true).await?;
-    Ok(current_ui(&app).await)
-}
-
-#[tauri::command]
-fn quit_app(app: AppHandle) {
-    app.exit(0);
-}
-
-// ---------------------------------------------------------------------------
-// Menu bar item: read-only. Information about the current image, opening the
-// panel, quitting. Every setting lives in the panel.
-//
-// It is a convenience, never the only way in. Nothing depends on it: the panel
-// carries every setting, the manual refresh and the quit button, launching the
-// app again brings that panel up (single instance), and an item that fails to
-// build is logged and stepped over rather than being a startup error.
-// ---------------------------------------------------------------------------
-
-fn build_tray(app: &tauri::App) -> tauri::Result<()> {
-    let title = MenuItem::with_id(app, "title", "Loading...", false, None::<&str>)?;
-    let info = MenuItem::with_id(app, "info", "-", false, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Open APOD Wallpaper", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-
-    let menu = Menu::with_items(
-        app,
-        &[
-            &title,
-            &info,
-            &PredefinedMenuItem::separator(app)?,
-            &open,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
-
-    app.manage(TrayHandles { title, info });
-
-    // Reported rather than asserted: the caller treats a menu bar item it
-    // could not build as a missing convenience and starts anyway, which a
-    // panic here would turn back into a fatal error.
-    let icon = app
-        .default_window_icon()
-        .ok_or_else(|| {
-            tauri::Error::Io(std::io::Error::other(
-                "the bundle carries no default icon to put in the menu bar",
-            ))
-        })?
-        .clone();
-
-    TrayIconBuilder::with_id("apod-tray")
-        .icon(icon)
-        .tooltip("APOD Wallpaper")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "open" => show_panel(app),
-            "quit" => app.exit(0),
-            _ => {}
-        })
-        .build(app)?;
-
-    Ok(())
+    tray::update_labels(app, &ui);
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +85,7 @@ const USAGE: &str = concat!(
     "APOD Wallpaper ",
     env!("CARGO_PKG_VERSION"),
     "\n\nSets NASA's Astronomy Picture of the Day as your desktop wallpaper.\n\
-     Starts in the background and stays there; the menu bar icon opens the\n\
+     Starts in the background and stays there; the tray icon opens the\n\
      settings panel.\n\n\
      Usage: apod-wallpaper [OPTIONS]\n\n\
      Options:\n  \
@@ -403,22 +123,29 @@ pub fn run() {
             // the bundle is run directly. Launching the bundle again while it
             // runs starts nothing: macOS sends a reopen event instead, handled
             // in `run()`. Both are deliberate, and both open the panel.
-            show_panel(app);
+            panel::show_panel(app);
         }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            get_state,
-            set_mode,
-            set_specific_date,
-            set_api_key,
-            set_fit_mode,
-            refresh_now,
-            quit_app
+            commands::get_state,
+            commands::set_mode,
+            commands::set_specific_date,
+            commands::set_api_key,
+            commands::set_fit_mode,
+            commands::refresh_now,
+            commands::quit_app
         ])
         .setup(move |app| {
             // No Dock icon and no application menu: this is a menu-bar
             // application. `LSUIElement` in `Info.plist` says the same for a
             // bundled build; this covers the binary run on its own.
+            //
+            // There is nothing to do here on GNOME. An application with no
+            // window open occupies nothing in the Shell already, and its
+            // `.desktop` entry deliberately stays visible in the app grid:
+            // without a tray icon, launching the application again is the only
+            // way back to the panel.
+            #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let data_dir = app.path().app_data_dir()?;
@@ -445,10 +172,10 @@ pub fn run() {
                 last_check: None,
             }))));
 
-            // A menu bar item that cannot be built is a missing convenience,
+            // A tray item that cannot be built is a missing convenience,
             // not a reason to refuse to start: see the note above `build_tray`.
-            if let Err(e) = build_tray(app) {
-                eprintln!("no menu bar icon: {e}");
+            if let Err(e) = tray::build(app) {
+                eprintln!("no tray icon: {e}");
             }
 
             // Screen changes and resumes from sleep reach the scheduler
@@ -461,31 +188,38 @@ pub fn run() {
             tauri::async_runtime::spawn(scheduler::run(app.handle().clone(), wakeup));
 
             // Starting the app is not a request to see it. It lives in the
-            // menu bar, it is started at login, and a login that throws a
+            // tray, it is started at login, and a login that throws a
             // window at the screen is exactly what a background utility must
             // not do -- so an ordinary start puts nothing on screen at all.
             //
-            // The very first launch is the one exception. There is no menu bar
+            // The very first launch is the one exception. There is no tray
             // icon the user has learnt to look for yet and no wallpaper set,
             // so opening the panel once is how the app says where it went.
             // Every later start, login included, is silent.
             if first_run {
-                show_panel(app.handle());
+                panel::show_panel(app.handle());
             }
 
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while launching the application")
-        .run(|app, event| match event {
+        // `_app` because the only arm that reads it is the macOS one below, and
+        // an ordinary name would warn on every other platform.
+        .run(|_app, event| match event {
             // Launched again from the Finder, Spotlight, Launchpad or `open`
             // while already running. macOS starts no second process for a
             // bundled app -- it sends this instead -- so this, and not the
             // single-instance plugin, is what makes launching the app again
             // bring the panel back.
-            tauri::RunEvent::Reopen { .. } => show_panel(app),
+            //
+            // The event is macOS's alone. GNOME starts a second process, which
+            // the single-instance plugin hands to the running one, so both
+            // desktops end in the same place by different routes.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => panel::show_panel(_app),
             // With no visible window, prevent the automatic exit: the app only
-            // quits through the panel or the menu bar.
+            // quits through the panel or the tray.
             tauri::RunEvent::ExitRequested { api, code, .. } if code.is_none() => {
                 api.prevent_exit()
             }
@@ -495,7 +229,128 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{USAGE, truncate};
+    use super::*;
+
+    /// Field names serde emits for a type, which is what actually crosses to
+    /// the panel -- not the Rust names, and not what anyone remembered.
+    fn emitted_fields<T: Serialize>(value: &T) -> Vec<String> {
+        match serde_json::to_value(value).expect("the panel contract must serialise") {
+            serde_json::Value::Object(map) => map.keys().cloned().collect(),
+            other => panic!("expected an object, got {other}"),
+        }
+    }
+
+    /// Field names declared by one `export interface` block of `types.ts`.
+    ///
+    /// A deliberately small parser. Generating the TypeScript from the Rust
+    /// would remove the need for it, and would also throw away the comments
+    /// that make `types.ts` worth reading; this keeps both files hand-written
+    /// and makes disagreeing between them a build failure.
+    fn declared_fields(interface: &str) -> Vec<String> {
+        let source = include_str!("../../src/types.ts");
+        let start = source
+            .find(&format!("export interface {interface} {{"))
+            .unwrap_or_else(|| panic!("types.ts declares no interface {interface}"));
+        let body = &source[start..];
+        let end = body.find("\n}").expect("unterminated interface");
+
+        let mut fields: Vec<String> = body[..end]
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                let line = line.trim();
+                // Skip comments and blank lines; a field is `name: type;` or
+                // `name?: type;`, and only the name before the colon matters.
+                if line.is_empty()
+                    || line.starts_with("//")
+                    || line.starts_with('*')
+                    || line.starts_with("/*")
+                {
+                    return None;
+                }
+                let (name, _) = line.split_once(':')?;
+                Some(name.trim().trim_end_matches('?').to_string())
+            })
+            .collect();
+        fields.sort();
+        fields
+    }
+
+    /// The one thing in this repository that nothing else checks.
+    ///
+    /// `UiState` is the whole contract with the panel, and it is written twice:
+    /// here, and by hand in `src/types.ts`. Adding a field on one side and
+    /// forgetting the other breaks neither the build, nor the typecheck, nor
+    /// any other test -- it breaks the panel at runtime, silently, on a user's
+    /// machine. So it breaks this instead.
+    #[test]
+    fn the_panel_sees_exactly_the_fields_this_sends() {
+        let applied = Applied {
+            date: "2026-07-28".into(),
+            title: "t".into(),
+            explanation: "e".into(),
+            copyright: None,
+            media_type: "image".into(),
+            video_url: None,
+            source_url: "u".into(),
+            image_file: "i.jpg".into(),
+            wallpaper_file: "w.jpg".into(),
+            fit: FitMode::BlurFill,
+            width: 1,
+            height: 1,
+            applied_on: "2026-07-28".into(),
+        };
+        let state = UiState {
+            mode: Mode::Daily,
+            fit_mode: FitMode::BlurFill,
+            api_key: String::new(),
+            specific_date: String::new(),
+            offline: false,
+            status_message: None,
+            last_check: None,
+            current: Some(applied.clone()),
+        };
+
+        assert_eq!(
+            emitted_fields(&state),
+            declared_fields("UiState"),
+            "UiState and src/types.ts disagree"
+        );
+
+        // `Applied` reaches the panel inside `UiState.current`, and the panel
+        // reads more of it than of anything else. It is allowed to declare
+        // fewer fields than the backend sends -- serde emits the whole record,
+        // including the file names the panel has no use for -- but never a
+        // field the backend does not send.
+        let sent = emitted_fields(&applied);
+        for field in declared_fields("Applied") {
+            assert!(
+                sent.contains(&field),
+                "src/types.ts declares Applied.{field}, which the backend never sends"
+            );
+        }
+    }
+
+    /// The two enums cross as strings, and the strings are spelled out again
+    /// in `types.ts` as union members.
+    #[test]
+    fn the_panel_spells_the_enum_values_the_way_serde_does() {
+        let source = include_str!("../../src/types.ts");
+        for mode in [Mode::Daily, Mode::Random, Mode::Specific] {
+            let emitted = serde_json::to_string(&mode).expect("a mode must serialise");
+            assert!(
+                source.contains(&emitted),
+                "src/types.ts never mentions the mode {emitted}"
+            );
+        }
+        for fit in [FitMode::BlurFill, FitMode::CropFill] {
+            let emitted = serde_json::to_string(&fit).expect("a fit mode must serialise");
+            assert!(
+                source.contains(&emitted),
+                "src/types.ts never mentions the fit mode {emitted}"
+            );
+        }
+    }
 
     #[test]
     fn the_usage_text_matches_the_options_that_are_parsed() {
@@ -505,14 +360,5 @@ mod tests {
         // asks for. A `--background` left in the help text would send users
         // to a launch agent they no longer need.
         assert!(!USAGE.contains("--background"));
-    }
-
-    #[test]
-    fn truncate_keeps_short_titles_and_bounds_long_ones() {
-        assert_eq!(truncate("Andromeda", 20), "Andromeda");
-        assert_eq!(truncate("Andromeda", 6), "And...");
-        // Counted in characters, not bytes: a title cut mid-character would
-        // reach the menu bar as broken text.
-        assert_eq!(truncate("éééééé", 4), "é...");
     }
 }
