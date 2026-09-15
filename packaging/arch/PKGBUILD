@@ -34,6 +34,22 @@ depends=(
 )
 makedepends=('rust' 'nodejs' 'pnpm' 'pkgconf')
 
+# makepkg enables link-time optimisation for C by default, which puts
+# `-flto=auto` in CFLAGS. `aws-lc-sys`, which reqwest pulls in for TLS, then
+# compiles its C with gcc and emits GIMPLE bitcode, while the Rust link runs
+# `ld.lld` -- and lld cannot read GCC's bitcode, so every aws_lc_* symbol comes
+# back undefined. Rust's own `lto = "fat"` is set in Cargo.toml and is
+# untouched by this: the binary is still built with LTO, just not the C half
+# through a toolchain that disagrees with itself.
+options=(!lto)
+
+# `makepkg` warns that the package "contains reference to $srcdir", and it is
+# right: `tauri::generate_context!` bakes the crate directory into the binary
+# as ordinary metadata, alongside the author and the command names. It is an
+# inert string, never opened at runtime, and `--remap-path-prefix` does not
+# reach it because a proc macro emitted it rather than the compiler recording
+# it. Left alone deliberately; the alternative is patching Tauri.
+
 # The tray library really is optional: it is loaded at runtime rather than
 # linked, and the application is built to run with no tray at all. Under GNOME
 # it takes the shell extension as well before any icon appears.
