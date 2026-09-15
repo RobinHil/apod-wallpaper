@@ -55,16 +55,21 @@ jobs:
         run: cargo test --locked
         working-directory: src-tauri
 
+      # Before setup-node, which needs pnpm on the PATH to find the store it
+      # is being asked to cache. The version comes from `packageManager` in
+      # package.json, so the two cannot drift apart.
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck the frontend
-        run: npx tsc --noEmit
+        run: pnpm exec tsc --noEmit
 
       # The version is declared in three files that nothing else keeps in
       # step, and a mismatch only shows up as mislabelled release artifacts.
@@ -91,10 +96,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       # Both slices are compiled here and `lipo`d together, so both targets
       # have to be installed even though only one of them matches the runner.
@@ -107,13 +114,13 @@ jobs:
           workspaces: src-tauri
           key: universal
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       # One artifact rather than one per architecture: a 10 MB download nobody
       # has to choose between beats two 5 MB ones and a chance of picking the
       # wrong one.
       - name: Build the bundle
-        run: npm run bundle -- --target universal-apple-darwin
+        run: pnpm bundle --target universal-apple-darwin
 
       # `LSUIElement` is what keeps the app out of the Dock, and it comes from
       # `Info.plist` being merged into the bundle. A merge that silently stops

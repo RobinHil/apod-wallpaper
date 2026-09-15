@@ -166,17 +166,26 @@ megabytes.
 
 Three things are needed: the Xcode Command Line Tools,
 [Rust](https://www.rust-lang.org/tools/install) (stable, through rustup) and
-[Node.js](https://nodejs.org) 22 or newer with npm (CI builds on 24, the
-active LTS).
+[Node.js](https://nodejs.org) 22 or newer (CI builds on 24, the active LTS).
+
+The package manager is [pnpm](https://pnpm.io). The version CI builds with is
+recorded as `packageManager` in `package.json`; pnpm reads that field itself
+and switches to the version named there, so any recent pnpm will do to start:
+
+```bash
+npm install -g pnpm     # or `brew install pnpm`, or your distribution's package
+```
+
+Then:
 
 ```bash
 xcode-select --install
-npm install
-npm run tauri dev      # development, with a live-reloading panel
-npm run bundle         # release bundle
+pnpm install
+pnpm tauri dev         # development, with a live-reloading panel
+pnpm bundle            # release bundle
 ```
 
-`npm run bundle` produces
+`pnpm bundle` produces
 `src-tauri/target/release/bundle/macos/APOD Wallpaper.app` and a `.dmg` next
 to it, built for the machine it runs on.
 
@@ -185,7 +194,7 @@ targets have to be installed for it:
 
 ```bash
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-npm run bundle, --target universal-apple-darwin
+pnpm bundle --target universal-apple-darwin
 ```
 
 Naming a target moves the output under
@@ -197,11 +206,11 @@ Before opening a pull request, the same checks CI runs:
 ```bash
 cd src-tauri
 cargo fmt --all --check
-cargo clippy --locked, -D warnings                 # lints, as the app is shipped
-cargo clippy --locked --all-targets, -D warnings   # lints, tests included
+cargo clippy --locked -- -D warnings                 # lints, as the app is shipped
+cargo clippy --locked --all-targets -- -D warnings   # lints, tests included
 cargo test --locked
 cd ..
-npx tsc --noEmit
+pnpm exec tsc --noEmit
 ```
 
 Clippy twice is not a typo: `--all-targets` builds the tests, whose
