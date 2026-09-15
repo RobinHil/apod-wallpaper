@@ -181,7 +181,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=1 pnpm bundle
 
 `APPIMAGE_EXTRACT_AND_RUN` is for hosts that have dropped libfuse2, Arch among them, since `linuxdeploy` is an AppImage that otherwise mounts itself. `NO_STRIP` is for the `strip` it carries, which is too old to read the `.relr.dyn` sections a current toolchain emits and treats every failure as fatal.
 
-Even with both, the AppImage does not build on a host with **gdk-pixbuf 2.44 or newer**, Arch today: its loaders are built into the library and the directory linuxdeploy's GTK plugin copies no longer exists. There is nothing to fix on this side, and CI builds on Ubuntu 22.04 where it does exist. The two other packages are produced before that step, so a failure there still leaves you with them.
+Even with both, the AppImage does not build on a host with **gdk-pixbuf 2.44 or newer**, Arch today: its loaders are built into the library and the directory linuxdeploy's GTK plugin copies no longer exists. There is nothing to fix on this side, and CI builds on Ubuntu 24.04 where it does exist. The two other packages are produced before that step, so a failure there still leaves you with them.
 
 macOS releases are one universal bundle instead, which is what CI builds. Both targets have to be installed for it:
 
@@ -255,7 +255,7 @@ chmod +x APOD*.AppImage
 ./APOD*.AppImage
 ```
 
-The packages are built on Ubuntu 22.04, so they need **glibc 2.35 or later**: Debian 12, Ubuntu 22.04, Fedora 36 and anything more recent, Arch included. Distributions are not cross-compiled for one another -- what decides where a package runs is the glibc it was linked against -- so an older build covers newer systems and not the reverse.
+The packages are built on Ubuntu 24.04, so they need **glibc 2.39 or later**: Debian 13, Ubuntu 24.04, Fedora 40 and anything more recent, Arch included. Debian 12 and Ubuntu 22.04 are too old for them, and that is a deliberate trade rather than an oversight: distributions are not cross-compiled for one another, what decides where a package runs is the glibc it was linked against, and a newer build reaches fewer systems rather than more. Anyone on one of those two can still build from source, where nothing requires a recent glibc.
 
 For Arch, `packaging/arch/PKGBUILD` builds natively from source instead; see [Building from source](#building-from-source).
 
@@ -503,7 +503,7 @@ macOS 26 is the last release supporting Intel hardware, and those machines go on
 
 There is no universal binary trick on Linux, because the thing that varies is not the architecture but the packaging: distributions disagree about how software is installed, not about what instructions the processor runs. So there are three formats rather than one file, and each is the right answer for somebody.
 
-Nor is any of this cross-compilation, whatever the word suggests. A single x86_64 build is produced and packaged three ways; what decides where it runs is the glibc it was linked against. CI builds on the oldest Ubuntu image GitHub still offers precisely for that reason, an older glibc being forward-compatible and not backward, and the README states the resulting floor the way it states macOS 13.3.
+Nor is any of this cross-compilation, whatever the word suggests. A single x86_64 build is produced and packaged three ways; what decides where it runs is the glibc it was linked against, and that is forward-compatible and not backward. So the runner image is a real choice and not a detail: an older one reaches more systems, a newer one fewer. CI builds on Ubuntu 24.04, the most recent image that is generally available rather than preview, and the floor that falls out of it is stated above the way macOS 13.3 is.
 
 Arch is the exception, and it is a deliberate one. Tauri has no bundler for it, and rather than invent a fourth artifact the repository carries a `PKGBUILD` that builds from source the way Arch expects. The AppImage is there for anyone who would rather not.
 
