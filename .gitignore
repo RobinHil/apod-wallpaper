@@ -31,3 +31,9 @@ src-tauri/gen/schemas
 # Runtime cache of the app (only if launched from the project folder;
 # normally stored in the OS app-data directory)
 cache/
+
+# makepkg output, next to the PKGBUILD it is built from
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.tar.gz
+packaging/arch/*.pkg.tar.*

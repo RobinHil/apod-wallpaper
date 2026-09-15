@@ -36,18 +36,42 @@ rand = "0.10.2"
 chrono = { version = "0.4.45", features = ["serde"] }
 tauri-plugin-single-instance = "2.4.3"
 
-# Setting the desktop picture, and watching for the screen changes and wake-ups
-# the scheduler has to react to (see `wallpaper` and `os_events`). AppKit is
-# already compiled as part of Tauri's macOS backend, so the `objc2` crates add
-# nothing to the build.
+# The four things that are not portable -- setting the desktop picture, being
+# told about screen changes and wake-ups, measuring the screen, and pulling a
+# frame out of a video -- are the only per-platform dependencies. Everything
+# above this line is shared (see `wallpaper`, `os_events`, `screen` and
+# `video_frame`, each of which dispatches on `target_os`).
+
+# AppKit and AVFoundation are already compiled as part of Tauri's macOS
+# backend, so the `objc2` crates add nothing to the build.
+[target.'cfg(target_os = "macos")'.dependencies]
 wallpaper = "3.2.0"
 block2 = "0.6"
+# Only for `Retained`, to name the two objects the video decoder holds on to.
+objc2 = { version = "0.6", default-features = false, features = ["std"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSNotification", "NSOperation", "NSString", "NSURL"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVAsset", "AVAssetImageGenerator", "objc2-core-media", "objc2-core-graphics"] }
 objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMTime"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage", "CGContext", "CGColorSpace", "CGBitmapContext"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
+
+# The same argument on the GNOME side. GLib, GIO and GTK are already linked by
+# Tauri's Linux backend, so GSettings and GDBus cost nothing extra; `gio` 0.18
+# is the version `gtk` 0.18 already pulls in.
+#
+# GStreamer is deliberately pinned to the release that wants that same glib
+# 0.18: a newer one would drag a second copy of glib into the tree for a
+# handful of video APODs a year. The codecs stay the system's, exactly as
+# AVFoundation's are on macOS -- nothing is bundled here either.
+[target.'cfg(target_os = "linux")'.dependencies]
+# Only for `malloc_trim`, to hand an update's working set back to the kernel;
+# see `memory`. Already in the tree by way of half a dozen crates.
+libc = "0.2"
+gio = "0.18"
+glib = "0.18"
+gstreamer = "0.21"
+gstreamer-video = "0.21"
 
 [profile.release]
 # A background utility: trade compile time for a smaller, faster binary.

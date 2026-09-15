@@ -16,7 +16,7 @@ const APOD_START: (i32, u32, u32) = (1995, 6, 16);
 /// Re-draws allowed in random mode when a date lands on a day with no
 /// publication or no usable image.
 const MAX_RANDOM_ATTEMPTS: usize = 6;
-/// Size used on a first run when macOS reports no main display. Whatever it
+/// Size used on a first run when the desktop reports no main display. Whatever it
 /// composes gets replaced the moment a real screen shows up, since the size is
 /// part of what the updater compares.
 const ASSUMED_SCREEN: (u32, u32) = (1920, 1080);
@@ -63,6 +63,12 @@ pub async fn update(app: &AppHandle, force: bool) -> Result<Outcome, String> {
         }
     }
     crate::refresh_ui(app).await;
+
+    // The large buffers an update needs are all dropped by now, and the
+    // process is about to sleep until the next day change. Whatever the
+    // allocator is still holding on their behalf is of no use to it.
+    crate::memory::release_to_os();
+
     result
 }
 
@@ -76,23 +82,26 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
     // for is the best answer available: it keeps the comparisons below from
     // seeing a change that did not happen. Only a first run with nothing
     // applied has to fall back to a guess.
-    let (width, height) = crate::screen_size(app)
+    let (width, height) = crate::screen::size(app)
         .or_else(|| applied.as_ref().map(|a| (a.width, a.height)))
         .unwrap_or(ASSUMED_SCREEN);
 
-    // Nothing due: the image on disk already answers the current settings.
-    if !force && let Some(a) = &applied {
-        let usable = { state.lock().await.store.files_present(a) };
-        if usable && on_target(&settings, a, &today) {
-            if a.fit == settings.fit_mode && a.width == width && a.height == height {
+    if let Some(a) = &applied {
+        let present = { state.lock().await.store.files_present(a) };
+        match what_is_due(&settings, a, present, &today, width, height, force) {
+            // The image on disk already answers the current settings.
+            Due::Nothing => {
                 finish(state, note(&settings, a, &today)).await;
                 return Ok(Outcome::Satisfied);
             }
             // Right image, wrong screen size or fit mode: recompose from
             // the stored original, no network involved.
-            let record = reapply(state, a.clone(), settings.fit_mode, width, height).await?;
-            finish(state, note(&settings, &record, &today)).await;
-            return Ok(Outcome::Satisfied);
+            Due::Recompose => {
+                let record = reapply(state, a.clone(), settings.fit_mode, width, height).await?;
+                finish(state, note(&settings, &record, &today)).await;
+                return Ok(Outcome::Satisfied);
+            }
+            Due::Fetch => {}
         }
     }
 
@@ -238,6 +247,53 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
     } else {
         Outcome::Satisfied
     })
+}
+
+/// How much of an update the wallpaper already on disk saves us.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Due {
+    /// Nothing at all: no API call, no download, no composition, not even a
+    /// wallpaper-set call. Restarting five times in a day lands here five
+    /// times and costs five `state.json` reads.
+    Nothing,
+    /// The right image for the wrong screen size or fit mode. Recomposed from
+    /// the stored original, without touching the network.
+    Recompose,
+    /// Ask the API.
+    Fetch,
+}
+
+/// Decides which of the three an update is, given what is already applied.
+///
+/// Pure on purpose. This is the most intricate reasoning in the application --
+/// it crosses the mode, the publication date, whether the files survived, the
+/// fit mode, the screen size and the caller's `force` -- and it used to be
+/// spelled out inside `run`, where an `AppHandle` made it untestable. Here
+/// every combination can be, and is, asserted below.
+fn what_is_due(
+    settings: &Settings,
+    applied: &Applied,
+    present: bool,
+    today: &str,
+    width: u32,
+    height: u32,
+    force: bool,
+) -> Due {
+    // `force` is the panel saying "do it anyway", which includes re-applying
+    // an identical image to take the desktop back from a wallpaper the user
+    // set by hand. Missing files and a stale image both mean the same thing:
+    // there is nothing here to save us the round trip.
+    if force || !present || !on_target(settings, applied, today) {
+        return Due::Fetch;
+    }
+
+    // The composition records the inputs it depended on. Both have to still
+    // hold, or the image is right and the picture of it is wrong.
+    if applied.fit == settings.fit_mode && applied.width == width && applied.height == height {
+        Due::Nothing
+    } else {
+        Due::Recompose
+    }
 }
 
 /// Is the applied image the one the current settings ask for right now?
@@ -536,7 +592,7 @@ async fn offline(state: &State, e: ApiError) -> String {
 
 /// Records a failure that is not an outage: we reached the network fine, what
 /// came back was unusable. Clearing `offline` matters -- leaving it set would
-/// have the panel and the menu bar blame a connection that is working.
+/// have the panel and the tray blame a connection that is working.
 async fn fail(state: &State, message: String) -> String {
     let mut d = state.lock().await;
     d.offline = false;
@@ -644,6 +700,108 @@ mod tests {
             specific_date: specific.to_string(),
             ..Settings::default()
         }
+    }
+
+    /// `record()` is applied today, at 100x100, in blurred-fill: the arguments
+    /// below say how each case differs from that.
+    fn due(present: bool, force: bool) -> Due {
+        what_is_due(
+            &settings(Mode::Daily, ""),
+            &record("2026-07-28", "2026-07-28"),
+            present,
+            "2026-07-28",
+            100,
+            100,
+            force,
+        )
+    }
+
+    #[test]
+    fn an_up_to_date_wallpaper_costs_nothing() {
+        assert_eq!(due(true, false), Due::Nothing);
+    }
+
+    #[test]
+    fn a_panel_action_always_goes_to_the_api() {
+        // "Refresh now" on an image that is already correct still re-applies
+        // it, which is how the desktop is taken back from a wallpaper set by
+        // hand. Answering `Nothing` there would leave the button visibly dead.
+        assert_eq!(due(true, true), Due::Fetch);
+    }
+
+    #[test]
+    fn a_missing_file_is_not_repaired_from_the_record_alone() {
+        // `state.json` can outlive the images it names -- a cleaner, a full
+        // disk, a user emptying the directory. The record alone composes
+        // nothing, so this has to be a fetch and not a recomposition.
+        assert_eq!(due(false, false), Due::Fetch);
+    }
+
+    #[test]
+    fn a_stale_image_is_fetched_whatever_the_composition_says() {
+        let s = settings(Mode::Daily, "");
+        let yesterday = record("2026-07-27", "2026-07-28");
+        assert_eq!(
+            what_is_due(&s, &yesterday, true, "2026-07-28", 100, 100, false),
+            Due::Fetch
+        );
+    }
+
+    #[test]
+    fn a_new_screen_size_recomposes_instead_of_downloading() {
+        let s = settings(Mode::Daily, "");
+        let a = record("2026-07-28", "2026-07-28");
+        for (w, h) in [(200, 100), (100, 200), (2560, 1440)] {
+            assert_eq!(
+                what_is_due(&s, &a, true, "2026-07-28", w, h, false),
+                Due::Recompose,
+                "{w}x{h}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_new_fit_mode_recomposes_instead_of_downloading() {
+        let mut s = settings(Mode::Daily, "");
+        s.fit_mode = FitMode::CropFill;
+        assert_eq!(
+            what_is_due(
+                &s,
+                &record("2026-07-28", "2026-07-28"),
+                true,
+                "2026-07-28",
+                100,
+                100,
+                false
+            ),
+            Due::Recompose
+        );
+    }
+
+    #[test]
+    fn every_mode_decides_staleness_its_own_way() {
+        let a = record("2026-07-28", "2026-07-28");
+        let same = |s: &Settings| what_is_due(s, &a, true, "2026-07-28", 100, 100, false);
+
+        // Daily compares the publication date.
+        assert_eq!(same(&settings(Mode::Daily, "")), Due::Nothing);
+        // Random compares the day it was drawn on, so today's draw stands
+        // whatever it drew -- otherwise every wake-up would swap the picture.
+        assert_eq!(same(&settings(Mode::Random, "")), Due::Nothing);
+        // Specific compares the chosen date, and only that.
+        assert_eq!(same(&settings(Mode::Specific, "2026-07-28")), Due::Nothing);
+        assert_eq!(same(&settings(Mode::Specific, "2001-01-01")), Due::Fetch);
+    }
+
+    #[test]
+    fn a_random_draw_from_an_earlier_day_is_redrawn() {
+        // Applied yesterday, so today has had no draw yet.
+        let s = settings(Mode::Random, "");
+        let a = record("2020-03-04", "2026-07-27");
+        assert_eq!(
+            what_is_due(&s, &a, true, "2026-07-28", 100, 100, false),
+            Due::Fetch
+        );
     }
 
     #[test]

@@ -26,7 +26,7 @@ fn network(e: reqwest::Error) -> ApiError {
 
 /// APOD API response. `copyright` is absent for public-domain images produced
 /// by NASA; when present it must be preserved and shown everywhere (store,
-/// menu bar, panel).
+/// tray, panel).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Apod {
     pub date: String,

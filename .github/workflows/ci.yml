@@ -17,12 +17,36 @@ env:
 
 jobs:
   # Gate: nothing is built until formatting, lints, types and tests pass once.
+  #
+  # On both platforms, and that is not duplication for its own sake: clippy and
+  # the compiler only ever see the `cfg` branch of the host they run on, so the
+  # GNOME backends are invisible to a macOS job and the Apple ones invisible to
+  # a Linux job. One platform alone would let half the per-platform code rot.
   check:
-    name: Lint and test
-    runs-on: macos-26
+    name: Lint and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-22.04]
     steps:
       - uses: actions/checkout@v7
+
+      # webkit2gtk is what Tauri's Linux backend links against, and the
+      # appindicator library is what the tray needs; the GStreamer development
+      # packages are for `video_frame`. None of this exists on the runner image.
+      - name: Install the Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -31,7 +55,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: check
+          key: check-${{ matrix.os }}
 
       - name: Check Rust formatting
         run: cargo fmt --all --check
@@ -55,41 +79,54 @@ jobs:
         run: cargo test --locked
         working-directory: src-tauri
 
-      # Before setup-node, which needs pnpm on the PATH to find the store it
-      # is being asked to cache. The version comes from `packageManager` in
-      # package.json, so the two cannot drift apart.
+      # The Rust side is checked on both platforms because the `cfg` branches
+      # differ. Everything below this line does not: the panel and the version
+      # numbers are the same files whatever the runner, so they are checked
+      # once, on the runner that is not also building the release bundle.
+      #
+      # pnpm goes before setup-node, which needs it on the PATH to find the
+      # store it is being asked to cache. The version comes from
+      # `packageManager` in package.json, so the two cannot drift apart.
       - uses: pnpm/action-setup@v4
+        if: runner.os == 'Linux'
 
       - uses: actions/setup-node@v7
+        if: runner.os == 'Linux'
         with:
           node-version: 24
           cache: pnpm
 
       - name: Install frontend dependencies
+        if: runner.os == 'Linux'
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck the frontend
+        if: runner.os == 'Linux'
         run: pnpm exec tsc --noEmit
 
-      # The version is declared in three files that nothing else keeps in
+      # The version is declared in four files that nothing else keeps in
       # step, and a mismatch only shows up as mislabelled release artifacts.
       - name: Check the declared versions agree
+        if: runner.os == 'Linux'
         run: |
           npm_version=$(node -p "require('./package.json').version")
           conf_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
           cargo_version=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d'"' -f2)
-          echo "package.json=$npm_version tauri.conf.json=$conf_version Cargo.toml=$cargo_version"
-          if [ "$npm_version" != "$conf_version" ] || [ "$npm_version" != "$cargo_version" ]; then
-            echo "::error::the version is declared three times and the three disagree"
-            exit 1
-          fi
+          pkgbuild_version=$(grep -m1 '^pkgver=' packaging/arch/PKGBUILD | cut -d= -f2)
+          echo "package.json=$npm_version tauri.conf.json=$conf_version Cargo.toml=$cargo_version PKGBUILD=$pkgbuild_version"
+          for declared in "$conf_version" "$cargo_version" "$pkgbuild_version"; do
+            if [ "$npm_version" != "$declared" ]; then
+              echo "::error::the version is declared four times and they disagree"
+              exit 1
+            fi
+          done
           if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$npm_version" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} does not match the declared version $npm_version"
             exit 1
           fi
 
-  build:
-    name: Build the universal bundle
+  build-macos:
+    name: Build the universal macOS bundle
     needs: check
     timeout-minutes: 90
     runs-on: macos-26
@@ -163,16 +200,141 @@ jobs:
             fi
           done
 
+      # Same smoke test as the Linux job, and here it also proves the slice
+      # that matches the runner actually starts.
+      - name: Smoke test the binary
+        run: |
+          set -euo pipefail
+          bin="src-tauri/target/universal-apple-darwin/release/bundle/macos/APOD Wallpaper.app/Contents/MacOS/apod-wallpaper"
+          printed=$("$bin" --version)
+          echo "reported: $printed"
+          declared=$(node -p "require('./package.json').version")
+          if [ "$printed" != "$declared" ]; then
+            echo "::error::the binary reports $printed but the project declares $declared"
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v7
         with:
           name: macos-universal
           if-no-files-found: error
           path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
+  build-linux:
+    name: Build the Linux packages
+    needs: check
+    timeout-minutes: 90
+    # The oldest Ubuntu still offered, deliberately. Distributions do not
+    # cross-compile for one another: what decides where these packages run is
+    # the glibc they were linked against, and an older runner covers newer
+    # distributions while the reverse is false. The README states the resulting
+    # minimum the way it states macOS 13.3.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            file
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: linux
+
+      - run: pnpm install --frozen-lockfile
+
+      # `.deb` for Debian and Ubuntu, `.rpm` for Fedora and RHEL, and an
+      # AppImage for everything else, Arch included -- next to which the
+      # PKGBUILD in packaging/arch/ builds natively from source.
+      #
+      # Two workarounds for `linuxdeploy`, which builds the AppImage.
+      # It is an AppImage itself and mounts itself with libfuse2, so it is told
+      # to unpack instead, which survives a runner image that has dropped
+      # fuse2. And the `strip` it carries is too old to read the `.relr.dyn`
+      # sections a current toolchain emits, so stripping is left off; the
+      # binary is already stripped by the release profile.
+      - name: Build the packages
+        run: pnpm bundle
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          NO_STRIP: 1
+
+      # The GStreamer libraries are what `video_frame` decodes with, and they
+      # are linked, not opened on demand: a binary that lost them would fail to
+      # start rather than merely skip video APODs, and it would do so on the
+      # user's machine and not here.
+      - name: Check the binary links what it claims to
+        run: |
+          set -euo pipefail
+          bin=src-tauri/target/release/apod-wallpaper
+          ldd "$bin" | sort
+          for lib in libgstreamer-1.0 libgstvideo-1.0 libwebkit2gtk-4.1 libgio-2.0; do
+            if ! ldd "$bin" | grep -q "$lib"; then
+              echo "::error::$bin does not link $lib"
+              exit 1
+            fi
+          done
+
+      # The binary is built here and never run, and the failure this catches is
+      # exactly the one the GStreamer and appindicator dependencies introduce:
+      # a link that resolves on the builder and not on the user's machine.
+      # `--version` prints and exits before Tauri starts, so it needs no
+      # display and still loads every shared library the binary names.
+      - name: Smoke test the binary
+        run: |
+          set -euo pipefail
+          printed=$(src-tauri/target/release/apod-wallpaper --version)
+          echo "reported: $printed"
+          declared=$(node -p "require('./package.json').version")
+          if [ "$printed" != "$declared" ]; then
+            echo "::error::the binary reports $printed but the project declares $declared"
+            exit 1
+          fi
+
+      - name: Check every package format was produced
+        run: |
+          set -euo pipefail
+          bundle=src-tauri/target/release/bundle
+          for pattern in "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm "$bundle"/appimage/*.AppImage; do
+            # shellcheck disable=SC2086
+            if ! compgen -G "$pattern" > /dev/null; then
+              echo "::error::nothing matched $pattern"
+              exit 1
+            fi
+          done
+          ls -la "$bundle"/deb "$bundle"/rpm "$bundle"/appimage
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-x86_64
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/appimage/*.AppImage
+
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build-macos, build-linux]
     # Only downloads the artifacts and attaches them to the tag: nothing is
     # compiled here, so the cheapest runner does.
     runs-on: ubuntu-24.04
@@ -189,9 +351,14 @@ jobs:
           files: artifacts/**/*
           generate_release_notes: true
           # These builds are unsigned; the README explains the Gatekeeper step
-          # users need.
+          # macOS users need.
           body: |
-            One universal build, for Apple silicon and Intel alike. It is
-            unsigned. After installing, run
+            **macOS**: one universal `.dmg`, for Apple silicon and Intel alike.
+            It is unsigned, so after installing run
             `xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"`.
+
+            **Linux**: `.deb` for Debian and Ubuntu, `.rpm` for Fedora and
+            RHEL, and an `.AppImage` that runs anywhere. GNOME only for now.
+            Arch users can build from `packaging/arch/PKGBUILD` instead.
+
             See the README for details.

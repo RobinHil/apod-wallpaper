@@ -6,25 +6,23 @@
 //! apod.nasa.gov -- and the API has no thumbnail for those at all: asked for
 //! one it answers with an empty string. Those days used to be skipped.
 //!
-//! Decoding is done by AVFoundation, which is part of macOS. It is linked the
-//! same way AppKit already is for setting the desktop picture, so the frame
-//! costs the app no bundled decoder, and the user nothing to install: the
-//! container and codec support is whatever the system itself can play.
+//! Decoding is done by whatever the desktop already ships -- AVFoundation on
+//! macOS, GStreamer on GNOME -- so the frame costs the app no bundled decoder
+//! and the user nothing to install. The formats that work are the ones the
+//! system itself can play, on both, which is a limitation worth stating rather
+//! than papering over: a distribution that ships no H.264 decoder will not
+//! produce a frame, and the day keeps the wallpaper already in place.
+//!
+//! Choosing *which* frame is the same problem everywhere, so it lives here.
+//! Only opening the file and decoding one instant differ, and that is the
+//! whole of the per-platform backend.
 
 use image::RgbaImage;
-use objc2_av_foundation::{AVAssetImageGenerator, AVURLAsset};
-use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_core_graphics::{
-    CGBitmapContextCreate, CGColorSpace, CGContext, CGImage, CGImageAlphaInfo,
-};
-use objc2_core_media::CMTime;
-use objc2_foundation::{NSString, NSURL};
 use std::path::Path;
 
-/// Timescale for the instants we ask for, in ticks per second. Frame-accurate
-/// for any sane frame rate, and far below what a `i64` tick count could
-/// overflow for a video of any plausible length.
-const TIMESCALE: i32 = 600;
+#[cfg_attr(target_os = "macos", path = "video_frame_macos.rs")]
+#[cfg_attr(target_os = "linux", path = "video_frame_gnome.rs")]
+mod backend;
 
 /// Where in the video to look, as fractions of its duration.
 ///
@@ -49,39 +47,23 @@ const FALLBACK_SECONDS: f64 = 1.0;
 /// Blocking and CPU-bound: the caller runs it on the blocking pool, like every
 /// other decode in the app.
 pub fn extract(path: &Path) -> Result<RgbaImage, String> {
-    let generator = unsafe {
-        let url = NSURL::fileURLWithPath(&NSString::from_str(
-            path.to_str().ok_or("The video path is not valid UTF-8.")?,
-        ));
-        let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
-        let generator = AVAssetImageGenerator::assetImageGeneratorWithAsset(&asset);
-        // Videos shot in portrait carry their rotation as track metadata; without
-        // this the frame comes out on its side.
-        generator.setAppliesPreferredTrackTransform(true);
-        // The default tolerance is infinite, which lets the generator answer
-        // with whatever keyframe it likes -- including one far from the
-        // instant asked for, which defeats the probes below. Half a second is
-        // still loose enough to avoid decoding a long run of frames.
-        let half = CMTime::with_seconds(0.5, TIMESCALE);
-        generator.setRequestedTimeToleranceBefore(half);
-        generator.setRequestedTimeToleranceAfter(half);
-        (generator, asset)
-    };
-    let (generator, asset) = generator;
+    let decoder = backend::Decoder::open(path)?;
 
-    // An invalid or indefinite duration reads back as NaN.
-    let duration = unsafe { asset.duration().seconds() };
-    let instants: Vec<f64> = if duration.is_finite() && duration > 0.0 {
-        PROBES.iter().map(|f| f * duration).collect()
-    } else {
-        vec![FALLBACK_SECONDS]
+    // An invalid or indefinite duration reads back as `None` on GNOME and as
+    // NaN on macOS; the backend normalises both away, and either way one
+    // instant near the start is the best guess left.
+    let instants: Vec<f64> = match decoder.duration() {
+        Some(duration) if duration.is_finite() && duration > 0.0 => {
+            PROBES.iter().map(|fraction| fraction * duration).collect()
+        }
+        _ => vec![FALLBACK_SECONDS],
     };
 
     let mut best: Option<(f64, RgbaImage)> = None;
     let mut last_error = String::from("The video yielded no frame.");
 
     for seconds in instants {
-        match frame_at(&generator, seconds) {
+        match decoder.frame_at(seconds) {
             Ok(frame) => {
                 let score = contrast(&frame);
                 if score >= GOOD_ENOUGH {
@@ -98,67 +80,6 @@ pub fn extract(path: &Path) -> Result<RgbaImage, String> {
     // Every probe was flat, so the video really does look like that: the least
     // flat of them is still the best wallpaper available.
     best.map(|(_, frame)| frame).ok_or(last_error)
-}
-
-/// Decodes the frame at one instant and converts it to RGBA.
-fn frame_at(generator: &AVAssetImageGenerator, seconds: f64) -> Result<RgbaImage, String> {
-    let time = unsafe { CMTime::with_seconds(seconds, TIMESCALE) };
-    // The asynchronous variant that replaced this one takes a completion
-    // block, which buys nothing here: this already runs on the blocking pool,
-    // where waiting is the point.
-    #[allow(deprecated)]
-    let image = unsafe { generator.copyCGImageAtTime_actualTime_error(time, std::ptr::null_mut()) }
-        .map_err(|e| format!("No frame at {seconds:.1}s: {e}"))?;
-    to_rgba(&image)
-}
-
-/// Redraws a `CGImage` into a buffer whose layout we chose, which is the point:
-/// the frame arrives in whatever pixel format the decoder produced, and Core
-/// Graphics converts colour space, alpha and byte order on the way in.
-fn to_rgba(image: &CGImage) -> Result<RgbaImage, String> {
-    let width = CGImage::width(Some(image));
-    let height = CGImage::height(Some(image));
-    if width == 0 || height == 0 {
-        return Err("The extracted frame has no pixels.".to_string());
-    }
-    let stride = width
-        .checked_mul(4)
-        .and_then(|row| row.checked_mul(height))
-        .ok_or("The extracted frame is implausibly large.")?;
-
-    let mut pixels = vec![0u8; stride];
-    let space = CGColorSpace::new_device_rgb().ok_or("No RGB colour space available.")?;
-    let context = unsafe {
-        CGBitmapContextCreate(
-            pixels.as_mut_ptr().cast(),
-            width,
-            height,
-            8,
-            width * 4,
-            Some(&space),
-            CGImageAlphaInfo::PremultipliedLast.0,
-        )
-    }
-    .ok_or("Could not allocate a bitmap for the frame.")?;
-
-    CGContext::draw_image(
-        Some(&context),
-        CGRect {
-            origin: CGPoint { x: 0.0, y: 0.0 },
-            size: CGSize {
-                width: width as f64,
-                height: height as f64,
-            },
-        },
-        Some(image),
-    );
-    CGContext::flush(Some(&context));
-    // The context borrows `pixels` and writes through that pointer; dropping it
-    // here ends the borrow before the buffer is handed to `image`.
-    drop(context);
-
-    RgbaImage::from_raw(width as u32, height as u32, pixels)
-        .ok_or_else(|| "The frame did not fill its buffer.".to_string())
 }
 
 /// Standard deviation of luminance, as a stand-in for "is there a picture
@@ -222,5 +143,16 @@ mod tests {
             "scored {}",
             contrast(&frame)
         );
+    }
+
+    #[test]
+    fn the_probes_stay_inside_the_video() {
+        // Each probe is a fraction of the duration, so one at or past 1.0
+        // would seek past the end and the backend would report no frame --
+        // turning a video that decodes perfectly well into a skipped day.
+        assert!(PROBES.iter().all(|f| *f > 0.0 && *f < 1.0));
+        // In order, because the search stops at the first frame that clears
+        // the bar and "earliest usable frame" is the intent.
+        assert!(PROBES.windows(2).all(|pair| pair[0] < pair[1]));
     }
 }

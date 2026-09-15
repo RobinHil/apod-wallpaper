@@ -32,7 +32,7 @@ pub fn decode_bytes(bytes: &[u8]) -> Result<DynamicImage, String> {
 }
 
 /// Smallest wallpaper this module will compose, and therefore the floor
-/// [`crate::screen_size`] clamps a monitor report to. Declared once because
+/// [`crate::screen::size`] clamps a monitor report to. Declared once because
 /// the two must agree: a screen measured below it would otherwise be recorded
 /// at one size and composed at another, and every later comparison would see a
 /// resolution change that never happened.
@@ -57,7 +57,7 @@ const JPEG_QUALITY: u8 = 92;
 
 /// Composes the final image at the exact screen size. No text is burned in:
 /// the wallpaper is the APOD as published, and the metadata (date, copyright)
-/// stays visible in the menu bar and the panel.
+/// stays visible in the tray menu and the panel.
 ///
 /// Every conversion below uses `into_rgb8` rather than `to_rgb8`: the value is
 /// owned and already RGB8, so the latter would copy a screen-sized buffer for
