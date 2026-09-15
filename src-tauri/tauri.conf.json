@@ -34,6 +34,9 @@
       "minimumSystemVersion": "13.3"
     },
     "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
       "deb": {
         "depends": [
           "libgstreamer1.0-0",

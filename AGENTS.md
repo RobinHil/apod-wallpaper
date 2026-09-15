@@ -152,7 +152,11 @@ A tray item that fails to build is logged and stepped over. On macOS that is def
 
 `tauri.conf.json` lists every bundle target and Tauri skips the ones foreign to the host, so one list covers both platforms. `bundle.linux.deb.depends` and `.rpm.depends` name the GStreamer and appindicator runtime packages.
 
-Arch has no Tauri bundler, so `packaging/arch/PKGBUILD` assembles the package from a plain `cargo build --release` plus the desktop entry beside it. That desktop entry is deliberately not `NoDisplay`: without a tray, launching the app from the overview is the only route to the panel that always works.
+Arch has no Tauri bundler, so `packaging/arch/PKGBUILD` assembles the package from a plain `cargo build --release` plus the desktop entry beside it. That desktop entry is deliberately not `NoDisplay`: without a tray, launching the app from the overview is the only route to the panel that always works. The PKGBUILD builds the published tag, not the working tree, so it only succeeds against a tag that already carries `pnpm-lock.yaml`.
+
+`bundle.linux.appimage.bundleMediaFramework` is `true`, and it matters more than it looks: Tauri defaults it to `false`, which produces an AppImage carrying GStreamer's libraries and not one codec. The failure is invisible until someone hits a video APOD, because everything else works. The Linux CI job installs the runtime plugin packages for the same reason, since linuxdeploy can only bundle what is present on the builder, and sets `GSTREAMER_INCLUDE_BAD_PLUGINS` for the OpenH264 decoder. OpenH264 rather than libav, so the licence section of the README stays true.
+
+Building the AppImage on a developer machine needs `patchelf` everywhere and, on Arch, three environment variables and a package; the README lists them under "Building from source" with the reason for each.
 
 ## Tests
 

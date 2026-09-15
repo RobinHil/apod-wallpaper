@@ -173,15 +173,30 @@ pnpm bundle            # release packages for the machine it runs on
 
 On macOS `pnpm bundle` produces `src-tauri/target/release/bundle/macos/APOD Wallpaper.app` and a `.dmg` next to it. On Linux it produces a `.deb`, an `.rpm` and an `.AppImage`, each in its own directory under `src-tauri/target/release/bundle/`.
 
-The `.deb` and `.rpm` build anywhere. The AppImage is fussier, because `linuxdeploy` and its GTK plugin assume a Debian-shaped host:
+The `.deb` and `.rpm` build anywhere. The AppImage is fussier, because `linuxdeploy` and its two plugins assume a Debian-shaped host, and they fail one at a time rather than all at once.
+
+On **Debian or Ubuntu** the one thing to add is `patchelf`, which the GStreamer plugin shells out to.
+
+On **Arch**, four things, and each of them is a genuine missing piece rather than a workaround:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=1 pnpm bundle
+sudo pacman -S --needed patchelf webp-pixbuf-loader
+
+APPIMAGE_EXTRACT_AND_RUN=1 \
+NO_STRIP=1 \
+GSTREAMER_INCLUDE_BAD_PLUGINS=1 \
+GSTREAMER_HELPERS_DIR=/usr/lib/gstreamer-1.0 \
+  pnpm bundle
 ```
 
-`APPIMAGE_EXTRACT_AND_RUN` is for hosts that have dropped libfuse2, Arch among them, since `linuxdeploy` is an AppImage that otherwise mounts itself. `NO_STRIP` is for the `strip` it carries, which is too old to read the `.relr.dyn` sections a current toolchain emits and treats every failure as fatal.
+- `webp-pixbuf-loader` exists to recreate `/usr/lib/gdk-pixbuf-2.0/2.10.0`. Since gdk-pixbuf 2.44 the loaders are built into the library and that directory is gone, but linuxdeploy's GTK plugin copies it without checking. Any package that installs a loader there will do; this is the smallest, and pacman owns the directory rather than leaving an orphan behind.
+- `APPIMAGE_EXTRACT_AND_RUN` is for hosts that have dropped libfuse2, since `linuxdeploy` is an AppImage that otherwise mounts itself.
+- `NO_STRIP` is for the `strip` linuxdeploy carries, which is too old to read the `.relr.dyn` sections a current toolchain emits and treats every failure as fatal.
+- `GSTREAMER_HELPERS_DIR` is because the GStreamer plugin guesses a Debian multiarch path for `gst-plugin-scanner` with no fallback, while Arch keeps it beside the plugins.
 
-Even with both, the AppImage does not build on a host with **gdk-pixbuf 2.44 or newer**, Arch today: its loaders are built into the library and the directory linuxdeploy's GTK plugin copies no longer exists. There is nothing to fix on this side, and CI builds on Ubuntu 24.04 where it does exist. The two other packages are produced before that step, so a failure there still leaves you with them.
+`GSTREAMER_INCLUDE_BAD_PLUGINS` is not distribution-specific: it is what pulls in the OpenH264 decoder, without which the AppImage bundles a media framework that cannot decode a video APOD. CI sets it too.
+
+The two other packages are produced before the AppImage step, so a failure there still leaves you with them.
 
 macOS releases are one universal bundle instead, which is what CI builds. Both targets have to be installed for it:
 
@@ -568,7 +583,7 @@ If it is not, confirm the login entry: *System Settings > General > Login Items 
 - **Multiple displays**: the image is composed at the main display's resolution, and the desktop applies it to every screen, every Space and every workspace. On a second screen of a different size it is scaled to fit. Plugging, unplugging or resizing a display is noticed and recomposed for.
 - **GNOME only, on Linux**: the wallpaper goes through GNOME's settings and the two system events come from Mutter and logind. On KDE, Xfce or anything else the application starts and then reports that it cannot set the wallpaper, rather than failing silently. Supporting another desktop means writing the same four pieces again for it.
 - **No system tray on stock GNOME**: since 3.26 the shell shows no status icons without an extension. The application is built not to need one, so the cost is the convenience of the icon and nothing else.
-- **Video APODs need a decoder the system has**: true on both platforms, and it bites on Fedora and RHEL, which ship no H.264 decoder for patent reasons. See [Troubleshooting](#troubleshooting).
+- **Video APODs need a decoder the system has**: true on both platforms, and it bites on Fedora and RHEL, which ship no H.264 decoder for patent reasons. See [Troubleshooting](#troubleshooting). The AppImage is the exception: it carries its own GStreamer, OpenH264 included, which is most of why it is three times the size of the other packages.
 - **The Apple event permission** is asked for once and has to be granted. A denied automation permission is silent from the app's side: the event fails, the error reaches the panel, but nothing can re-prompt for it, it has to be re-enabled in System Settings.
 - **Unsigned builds**: the Gatekeeper step in the install section is needed on every macOS download. Signing properly requires a paid Apple Developer certificate. The Linux packages are unsigned too, which matters less because no equivalent gate exists there.
 - **x86_64 only, on Linux**: ARM machines have to build from source. Nothing in the code is architecture-specific; it is a matter of adding a second CI runner when there is demand for it.
