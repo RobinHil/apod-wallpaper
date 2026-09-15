@@ -1,6 +1,6 @@
 [package]
 name = "apod-wallpaper"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sets NASA's Astronomy Picture of the Day as your desktop wallpaper"
 authors = ["Robin HILAIRE"]
 license = "MIT"

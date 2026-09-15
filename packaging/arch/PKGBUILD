@@ -15,7 +15,7 @@
 # tarball's checksum.
 
 pkgname=apod-wallpaper
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day"
 arch=('x86_64' 'aarch64')
