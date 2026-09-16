@@ -484,9 +484,19 @@ jobs:
           # host has these" -- bundling GLib in particular breaks libsecret and
           # produces undefined symbols in libgio. Every desktop does have them.
           # A stock `fedora:latest` is not a desktop and has none of them, so
-          # the base goes in first; without it the run dies on
-          # `libfribidi.so.0: cannot open shared object file`, which says
-          # nothing about the AppImage.
+          # the run died on `libfribidi.so.0: cannot open shared object file`,
+          # which said nothing about the AppImage.
+          #
+          # These are not a guess. Walking the NEEDED entries of the published
+          # AppImage transitively gives 100 libraries it carries and 21 it
+          # expects from the host; the four that glibc always provides are
+          # dropped and the rest are below. Asked for as sonames rather than
+          # package names, so a package rename on Fedora's side cannot silently
+          # turn this into a different test.
+          #
+          # This list is also an assertion: if the bundle starts needing
+          # something else from the host, this job fails instead of quietly
+          # installing it.
           #
           # What is left for the AppImage to bring is precisely what matters:
           # webkit2gtk, libsoup and GStreamer, none of which is installed here.
@@ -499,7 +509,24 @@ jobs:
           - case: the AppImage on Fedora
             image: fedora:latest
             script: |
-              dnf install -y gtk3 mesa-libGL
+              dnf install -y \
+                "libEGL.so.1()(64bit)" \
+                "libGL.so.1()(64bit)" \
+                "libX11-xcb.so.1()(64bit)" \
+                "libX11.so.6()(64bit)" \
+                "libcom_err.so.2()(64bit)" \
+                "libdrm.so.2()(64bit)" \
+                "libexpat.so.1()(64bit)" \
+                "libfontconfig.so.1()(64bit)" \
+                "libfreetype.so.6()(64bit)" \
+                "libfribidi.so.0()(64bit)" \
+                "libgbm.so.1()(64bit)" \
+                "libgcc_s.so.1()(64bit)" \
+                "libgpg-error.so.0()(64bit)" \
+                "libharfbuzz.so.0()(64bit)" \
+                "libstdc++.so.6()(64bit)" \
+                "libxcb.so.1()(64bit)" \
+                "libz.so.1()(64bit)"
               app=$(ls ./linux/appimage/*.AppImage)
               chmod +x "$app"
               APPIMAGE_EXTRACT_AND_RUN=1 "$app" --version
