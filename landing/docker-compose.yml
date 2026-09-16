@@ -1,0 +1,32 @@
+services:
+  # The production image: build it, publish it, forget it. Nothing is mounted,
+  # nothing is written at runtime.
+  web:
+    build:
+      context: .
+      args:
+        # The public address of this deployment, which the canonical URL, the
+        # hreflang pair and the sitemap are written from.
+        SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:8080}
+        SITE_BASE: ${SITE_BASE:-/}
+        VITE_NASA_API_KEY: ${VITE_NASA_API_KEY:-}
+    image: apod-wallpaper-landing:latest
+    ports:
+      - "${LANDING_PORT:-8080}:80"
+    restart: unless-stopped
+
+  # `docker compose --profile dev up dev` runs Vite against the checkout, with
+  # the anonymous volume keeping the container's own node_modules rather than
+  # the host's, which may have been installed for another platform.
+  dev:
+    profiles: ["dev"]
+    image: node:24-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_NASA_API_KEY: ${VITE_NASA_API_KEY:-}
+    command: sh -c "corepack enable && pnpm install && pnpm dev --host 0.0.0.0"

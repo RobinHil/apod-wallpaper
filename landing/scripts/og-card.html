@@ -1,0 +1,118 @@
+<!doctype html>
+<!-- The source of public/og-en.png and public/og-fr.png, the 1200x630 card a
+     link to this site unfurls into. Regenerate with:
+
+       google-chrome --headless --window-size=1200,630 \
+         --screenshot=public/og-en.png scripts/og-card.html
+       google-chrome --headless --window-size=1200,630 \
+         --screenshot=public/og-fr.png "scripts/og-card.html?lang=fr"
+
+     It is deliberately self-contained: the palette is copied rather than
+     imported, because a card is rendered once and then lives as a file. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        position: relative;
+        background: #07090f;
+        color: #e9ebf2;
+        font-family: "Inter", sans-serif;
+      }
+      .nebula {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(90px);
+      }
+      .one {
+        width: 700px; height: 700px; top: -260px; left: -180px;
+        background: radial-gradient(circle, #4c85f0 0%, transparent 65%);
+        opacity: 0.32;
+      }
+      .two {
+        width: 620px; height: 620px; bottom: -280px; right: -140px;
+        background: radial-gradient(circle, #a583f5 0%, transparent 65%);
+        opacity: 0.28;
+      }
+      .stars { position: absolute; inset: 0; }
+      .content { position: relative; padding: 58px 76px 52px; height: 100%;
+                 display: flex; flex-direction: column; }
+      .brand { display: flex; align-items: center; gap: 14px;
+               font-size: 22px; font-weight: 600; }
+      .brand img { width: 40px; height: 40px; }
+      .eyebrow { margin-top: 38px; font-size: 16px; font-weight: 600;
+                 letter-spacing: 0.18em; text-transform: uppercase; color: #8f96a8; }
+      h1 { margin-top: 18px; font-family: "Instrument Serif", serif;
+           font-size: 62px; line-height: 1.08; font-weight: 400; max-width: 22ch; }
+      h1 em { font-style: italic; }
+      .accent { background: linear-gradient(100deg, #e9ebf2 20%, #a583f5 62%, #4c85f0 100%);
+                -webkit-background-clip: text; background-clip: text; color: transparent; }
+      p { margin-top: 20px; font-size: 20px; line-height: 1.55; color: #8f96a8; max-width: 56ch; }
+      footer { margin-top: auto; padding-top: 28px; display: flex; align-items: center; gap: 14px;
+               font-size: 18px; color: #8f96a8; }
+      .pill { border: 1px solid #222736; border-radius: 99px; padding: 6px 14px;
+              font-size: 15px; font-weight: 600; color: #e9ebf2;
+              background: rgba(255,255,255,0.04); }
+      .spacer { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <div class="nebula one"></div>
+    <div class="nebula two"></div>
+    <canvas class="stars" width="1200" height="630"></canvas>
+
+    <div class="content">
+      <div class="brand"><img src="../public/app-icon.svg" alt="" /> APOD Wallpaper</div>
+      <p class="eyebrow" id="eyebrow"></p>
+      <h1 id="title"></h1>
+      <p id="sub"></p>
+      <footer>
+        <span class="pill">macOS</span>
+        <span class="pill">GNOME</span>
+        <span class="spacer"></span>
+        <span>github.com/RobinHil/apod-wallpaper</span>
+      </footer>
+    </div>
+
+    <script>
+      const COPY = {
+        en: {
+          eyebrow: "Free and open source",
+          title: ['Every morning,<br />the universe <em class="accent">redecorates.</em>'],
+          sub: "NASA's Astronomy Picture of the Day on your desktop, once a day. No window, no Dock icon, one background task asleep until midnight.",
+        },
+        fr: {
+          eyebrow: "Libre et open source",
+          title: ['Chaque matin,<br />l\'univers change <em class="accent">de décor.</em>'],
+          sub: "L'image astronomique du jour de la NASA sur votre bureau, une fois par jour. Aucune fenêtre, aucune icône dans le Dock, une tâche de fond endormie jusqu'à minuit.",
+        },
+      };
+
+      const lang = new URLSearchParams(location.search).get("lang") === "fr" ? "fr" : "en";
+      document.documentElement.lang = lang;
+      document.getElementById("eyebrow").textContent = COPY[lang].eyebrow;
+      document.getElementById("title").innerHTML = COPY[lang].title[0];
+      document.getElementById("sub").textContent = COPY[lang].sub;
+
+      const ctx = document.querySelector(".stars").getContext("2d");
+      for (let i = 0; i < 180; i += 1) {
+        const r = Math.random() * 1.1 + 0.25;
+        ctx.globalAlpha = Math.random() * 0.6 + 0.15;
+        ctx.fillStyle = r > 1 ? "#a9c4ff" : "#ffffff";
+        ctx.beginPath();
+        ctx.arc(Math.random() * 1200, Math.random() * 630, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    </script>
+  </body>
+</html>

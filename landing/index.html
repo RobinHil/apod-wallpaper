@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#07090f" />
+
+    <!-- Everything between these two markers is rewritten per language by
+         scripts/prerender.mjs. What is here is what `pnpm dev` serves. -->
+    <!--seo:start-->
+    <title>APOD Wallpaper - the universe, once a day, on your desktop</title>
+    <meta
+      name="description"
+      content="A background utility that sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day. Native, quiet, open source. macOS and GNOME."
+    />
+    <!--seo:end-->
+
+    <!-- The application's own icon, copied from src-tauri/icons. -->
+    <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/app-icon.png" />
+
+    <!-- The typefaces ship with the site, see scripts/fetch-fonts.mjs: no
+         third-party connection on the critical path, and no visitor of this
+         page is announced to a font server. -->
+  </head>
+
+  <body class="bg-bg text-text antialiased [text-rendering:optimizeLegibility]">
+    <div id="app"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

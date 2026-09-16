@@ -1,0 +1,108 @@
+@import "tailwindcss";
+@import "./fonts.css";
+
+/* The palette is the panel's dark theme, kept token for token where it shows
+   the product -- accent, hairline border, card plate, the two pill colours --
+   and extended with what a page needs and a settings window does not: a void
+   deeper than any surface, two nebula tints for the light thrown across it,
+   and a display face for the lines meant to be read slowly. */
+@theme {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+
+  --color-bg: #07090f;
+  --color-surface: #0d1017;
+  --color-card: #141824;
+  --color-text: #e9ebf2;
+  --color-text-dim: #8f96a8;
+  --color-border: #222736;
+  --color-accent: #4c85f0;
+  --color-accent-text: #ffffff;
+  --color-nebula: #a583f5;
+  --color-ember: #f0b45f;
+  --color-online: #5fd39a;
+
+  /* Washes, mixed in sRGB rather than through the `/opacity` modifier, which
+     mixes in Oklab and lands somewhere else. */
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --color-nebula-soft: color-mix(in srgb, var(--color-nebula) 12%, transparent);
+  --color-hairline: color-mix(in srgb, #ffffff 8%, transparent);
+  --color-plate: color-mix(in srgb, #ffffff 4%, transparent);
+
+  --animate-drift: drift 34s ease-in-out infinite;
+  --animate-breathe: breathe 9s ease-in-out infinite;
+  --animate-shimmer: shimmer 7s linear infinite;
+
+  @keyframes drift {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(2%, -3%, 0) scale(1.08);
+    }
+  }
+
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes shimmer {
+    to {
+      background-position: 200% center;
+    }
+  }
+}
+
+@layer base {
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  /* A thin scrollbar over a dark page, rather than the browser's default
+     light one punching a hole in it. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility glass {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, #ffffff 5%, transparent),
+    color-mix(in srgb, #ffffff 2%, transparent)
+  );
+  border: 1px solid var(--color-hairline);
+  backdrop-filter: blur(14px);
+}
+
+/* The one gradient the page uses on text: dawn on a limb, left to right. */
+@utility text-gradient {
+  background: linear-gradient(
+    100deg,
+    var(--color-text) 0%,
+    var(--color-text) 30%,
+    var(--color-nebula) 62%,
+    var(--color-accent) 100%
+  );
+  background-clip: text;
+  color: transparent;
+}
