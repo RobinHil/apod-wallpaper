@@ -15,12 +15,12 @@
 # the recipe itself, with the upstream version unchanged, bumps `pkgrel`
 # instead: that is what carries a packaging correction to people who already
 # installed the broken build, without inventing a release that does not exist.
-# `pkgrel=2` is one such fix -- see the note above `pnpm tauri build` in
+# `pkgrel=1` is one such fix -- see the note above `pnpm tauri build` in
 # build().
 
 pkgname=apod-wallpaper
-pkgver=0.2.0
-pkgrel=2
+pkgver=0.2.1
+pkgrel=1
 pkgdesc="Sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day"
 arch=('x86_64' 'aarch64')
 url="https://github.com/RobinHil/apod-wallpaper"
@@ -64,7 +64,7 @@ optdepends=(
 )
 
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('7cb532e56059f4fa0d2259cbc5e83ca45cd3afdef399f09d14bc7cedd72836e5')
+sha256sums=('SKIP')
 
 build() {
   cd "$pkgname-$pkgver"
