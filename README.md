@@ -173,28 +173,30 @@ pnpm bundle            # release packages for the machine it runs on
 
 On macOS `pnpm bundle` produces `src-tauri/target/release/bundle/macos/APOD Wallpaper.app` and a `.dmg` next to it. On Linux it produces a `.deb`, an `.rpm` and an `.AppImage`, each in its own directory under `src-tauri/target/release/bundle/`.
 
-The `.deb` and `.rpm` build anywhere. The AppImage is fussier, because `linuxdeploy` and its two plugins assume a Debian-shaped host, and they fail one at a time rather than all at once.
-
-On **Debian or Ubuntu** the one thing to add is `patchelf`, which the GStreamer plugin shells out to.
-
-On **Arch**, four things, and each of them is a genuine missing piece rather than a workaround:
+The `.deb` and `.rpm` build anywhere, and `pnpm bundle` is all they need. The AppImage is fussier, because `linuxdeploy` and its two plugins assume a Debian-shaped host, and they fail one at a time rather than all at once. There is a wrapper for exactly that:
 
 ```bash
-sudo pacman -S --needed patchelf webp-pixbuf-loader
-
-APPIMAGE_EXTRACT_AND_RUN=1 \
-NO_STRIP=1 \
-GSTREAMER_INCLUDE_BAD_PLUGINS=1 \
-GSTREAMER_HELPERS_DIR=/usr/lib/gstreamer-1.0 \
-  pnpm bundle
+./packaging/linux/bundle.sh          # arguments are passed through to `pnpm bundle`
 ```
 
+It sets the environment those plugins want, adds the two things Arch needs when it is running on Arch, and checks for the programs they shell out to before starting rather than twenty minutes in. The Linux CI job runs the same script, so there is one incantation to keep correct instead of one here and one in the workflow.
+
+It installs nothing, so this part is still yours to run:
+
+```bash
+sudo apt install patchelf                              # Debian, Ubuntu
+sudo pacman -S --needed patchelf webp-pixbuf-loader    # Arch
+```
+
+What the script sets, each answering a genuine missing piece rather than papering over one:
+
+- `patchelf` is shelled out to by the GStreamer plugin, on every distribution.
 - `webp-pixbuf-loader` exists to recreate `/usr/lib/gdk-pixbuf-2.0/2.10.0`. Since gdk-pixbuf 2.44 the loaders are built into the library and that directory is gone, but linuxdeploy's GTK plugin copies it without checking. Any package that installs a loader there will do; this is the smallest, and pacman owns the directory rather than leaving an orphan behind.
 - `APPIMAGE_EXTRACT_AND_RUN` is for hosts that have dropped libfuse2, since `linuxdeploy` is an AppImage that otherwise mounts itself.
 - `NO_STRIP` is for the `strip` linuxdeploy carries, which is too old to read the `.relr.dyn` sections a current toolchain emits and treats every failure as fatal.
 - `GSTREAMER_HELPERS_DIR` is because the GStreamer plugin guesses a Debian multiarch path for `gst-plugin-scanner` with no fallback, while Arch keeps it beside the plugins.
 
-`GSTREAMER_INCLUDE_BAD_PLUGINS` is not distribution-specific: it is what pulls in the OpenH264 decoder, without which the AppImage bundles a media framework that cannot decode a video APOD. CI sets it too.
+`GSTREAMER_INCLUDE_BAD_PLUGINS` is not distribution-specific: it is what pulls in the OpenH264 decoder, without which the AppImage bundles a media framework that cannot decode a video APOD. OpenH264 rather than libav, so the licence section below stays true.
 
 The two other packages are produced before the AppImage step, so a failure there still leaves you with them.
 
@@ -214,7 +216,13 @@ cd packaging/arch
 makepkg -si
 ```
 
-Note what that builds: the tarball GitHub generates for the `v$pkgver` tag, not the working tree beside it. It therefore only succeeds against a tag that already contains everything the build needs, `pnpm-lock.yaml` included, so pointing it at a release older than that fails in `pnpm install --frozen-lockfile` rather than anywhere interesting. Bump `pkgver` and run `updpkgsums` when cutting a release.
+Note what that builds: the tarball GitHub generates for the `v$pkgver` tag, not the working tree beside it. It therefore only succeeds against a tag that already contains everything the build needs, `pnpm-lock.yaml` included, so pointing it at a release older than that fails in `pnpm install --frozen-lockfile` rather than anywhere interesting. Bump `pkgver` and run `updpkgsums` when cutting a release; a correction to the recipe alone bumps `pkgrel` instead.
+
+On macOS, CI mounts the `.dmg` it built, copies the app into `/Applications` and starts it from there, which is the same route a person takes. Being unsigned and never downloaded by a browser, it carries no quarantine attribute, so that run says nothing about the Gatekeeper step below.
+
+CI installs every Linux package as well, each on the distribution it targets: the `.deb` on Debian, the `.rpm` on Fedora, the Arch package on Arch, and the AppImage on Fedora too. Each container starts stock and lets its own package manager resolve what the package declares, which is the only thing that checks those dependency names, written by hand and resolved nowhere else. A release is published only once all of that has passed.
+
+CI builds the Arch package too, in an `archlinux:base-devel` container, from the checkout rather than from the published tag. It then unpacks the result and checks that the binary inside embeds the panel, because the way this recipe fails is not a build error: built through `cargo build` instead of the Tauri CLI, the binary compiles, passes its tests, installs, sets a wallpaper, and only then shows a connection error where the panel should be.
 
 Before opening a pull request, the same checks CI runs:
 

@@ -11,12 +11,16 @@
 # it at a tag older than the pnpm migration fails for exactly that reason.
 #
 # Before publishing a new version to the AUR, bump `pkgver` to the new tag and
-# run `updpkgsums` in this directory to replace the SKIP below with that
-# tarball's checksum.
+# run `updpkgsums` in this directory to refresh the checksum below. A fix to
+# the recipe itself, with the upstream version unchanged, bumps `pkgrel`
+# instead: that is what carries a packaging correction to people who already
+# installed the broken build, without inventing a release that does not exist.
+# `pkgrel=2` is one such fix -- see the note above `pnpm tauri build` in
+# build().
 
 pkgname=apod-wallpaper
 pkgver=0.2.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day"
 arch=('x86_64' 'aarch64')
 url="https://github.com/RobinHil/apod-wallpaper"
@@ -34,6 +38,22 @@ depends=(
 )
 makedepends=('rust' 'nodejs' 'pnpm' 'pkgconf')
 
+# makepkg enables link-time optimisation for C by default, which puts
+# `-flto=auto` in CFLAGS. `aws-lc-sys`, which reqwest pulls in for TLS, then
+# compiles its C with gcc and emits GIMPLE bitcode, while the Rust link runs
+# `ld.lld` -- and lld cannot read GCC's bitcode, so every aws_lc_* symbol comes
+# back undefined. Rust's own `lto = "fat"` is set in Cargo.toml and is
+# untouched by this: the binary is still built with LTO, just not the C half
+# through a toolchain that disagrees with itself.
+options=(!lto)
+
+# `makepkg` warns that the package "contains reference to $srcdir", and it is
+# right: `tauri::generate_context!` bakes the crate directory into the binary
+# as ordinary metadata, alongside the author and the command names. It is an
+# inert string, never opened at runtime, and `--remap-path-prefix` does not
+# reach it because a proc macro emitted it rather than the compiler recording
+# it. Left alone deliberately; the alternative is patching Tauri.
+
 # The tray library really is optional: it is loaded at runtime rather than
 # linked, and the application is built to run with no tray at all. Under GNOME
 # it takes the shell extension as well before any icon appears.
@@ -44,7 +64,7 @@ optdepends=(
 )
 
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('7cb532e56059f4fa0d2259cbc5e83ca45cd3afdef399f09d14bc7cedd72836e5')
 
 build() {
   cd "$pkgname-$pkgver"
@@ -55,12 +75,18 @@ build() {
   export npm_config_store_dir="$srcdir/.pnpm-store"
 
   pnpm install --frozen-lockfile
-  # The panel, into dist/, which `tauri::generate_context!` embeds at compile
-  # time. `cargo build` alone would embed whatever dist/ happened to hold.
-  pnpm build
 
-  cd src-tauri
-  cargo build --release --locked
+  # Through the Tauri CLI, not `cargo build`, and that is not a stylistic
+  # preference. Tauri decides between a development and a production build from
+  # the `custom-protocol` feature: without it the binary loads its panel from
+  # `devUrl`, so an installed application starts and then reports that it
+  # cannot reach localhost. The CLI sets the feature; a bare `cargo build
+  # --release` does not, and produces that binary silently.
+  #
+  # `--no-bundle` stops after the binary, which is all a distribution package
+  # wants: `package()` below installs the pieces itself. The CLI also runs
+  # `beforeBuildCommand`, so the panel is built from here too.
+  pnpm tauri build --no-bundle
 }
 
 check() {
