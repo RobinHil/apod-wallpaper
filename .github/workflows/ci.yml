@@ -223,6 +223,54 @@ jobs:
             exit 1
           fi
 
+      # Everything above inspects the .app sitting in the build directory. The
+      # .dmg is what is actually published, and nothing had ever opened it: an
+      # image that mounts to an empty volume, or carries the wrong thing, would
+      # upload and attach to a release looking perfectly normal.
+      #
+      # So the app is installed the way a person installs it -- mount, drag to
+      # /Applications, eject -- and started from there.
+      #
+      # Two limits worth stating. Gatekeeper is not exercised: these builds are
+      # unsigned, and a file that CI produced carries no quarantine attribute,
+      # so this says nothing about the `xattr -d` step the README gives users.
+      # And only the slice matching the runner runs; the Intel one is checked
+      # by `lipo` and `otool` above and executed nowhere.
+      - name: Install it from the .dmg and start it
+        run: |
+          set -euo pipefail
+          dmg=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          echo "mounting $dmg"
+          mount=$(mktemp -d)
+          hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -quiet
+          ls -la "$mount"
+
+          sudo cp -R "$mount/APOD Wallpaper.app" /Applications/
+          hdiutil detach "$mount" -quiet
+
+          installed="/Applications/APOD Wallpaper.app/Contents/MacOS/apod-wallpaper"
+          printed=$("$installed" --version)
+          echo "reported from /Applications: $printed"
+          declared=$(node -p "require('./package.json').version")
+          if [ "$printed" != "$declared" ]; then
+            echo "::error::the installed binary reports $printed but the project declares $declared"
+            exit 1
+          fi
+
+          # The same assertion the Arch job makes, for the same reason: a build
+          # that lost `custom-protocol` embeds no frontend and reaches for
+          # devUrl instead. `pnpm bundle` sets the feature, and nothing here
+          # had ever checked that it still did.
+          #
+          # Collected into a variable rather than piped into `grep -q`, which
+          # under `pipefail` fails on a sound binary by SIGPIPE-ing `strings`.
+          assets=$(strings "$installed" | grep -oE 'index-[A-Za-z0-9_-]+\.(js|css)' | sort -u || true)
+          echo "embedded assets: ${assets:-<none>}"
+          if ! grep -q '\.js$' <<< "$assets"; then
+            echo "::error::$installed embeds no frontend asset, so the panel would load from devUrl"
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v7
         with:
           name: macos-universal

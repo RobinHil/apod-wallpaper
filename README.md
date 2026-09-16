@@ -218,6 +218,8 @@ makepkg -si
 
 Note what that builds: the tarball GitHub generates for the `v$pkgver` tag, not the working tree beside it. It therefore only succeeds against a tag that already contains everything the build needs, `pnpm-lock.yaml` included, so pointing it at a release older than that fails in `pnpm install --frozen-lockfile` rather than anywhere interesting. Bump `pkgver` and run `updpkgsums` when cutting a release; a correction to the recipe alone bumps `pkgrel` instead.
 
+On macOS, CI mounts the `.dmg` it built, copies the app into `/Applications` and starts it from there, which is the same route a person takes. Being unsigned and never downloaded by a browser, it carries no quarantine attribute, so that run says nothing about the Gatekeeper step below.
+
 CI installs every Linux package as well, each on the distribution it targets: the `.deb` on Debian, the `.rpm` on Fedora, the Arch package on Arch, and the AppImage on Fedora too. Each container starts stock and lets its own package manager resolve what the package declares, which is the only thing that checks those dependency names, written by hand and resolved nowhere else. A release is published only once all of that has passed.
 
 CI builds the Arch package too, in an `archlinux:base-devel` container, from the checkout rather than from the published tag. It then unpacks the result and checks that the binary inside embeds the panel, because the way this recipe fails is not a build error: built through `cargo build` instead of the Tauri CLI, the binary compiles, passes its tests, installs, sets a wallpaper, and only then shows a connection error where the panel should be.
