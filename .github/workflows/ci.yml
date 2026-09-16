@@ -678,18 +678,20 @@ jobs:
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    # Every build job and every install job gates this, the macOS pair
-    # included: nothing reaches the releases page that has not been installed
-    # somewhere and started.
+    # The two install jobs, and only them: each already waits on what produced
+    # what it installs, so `build-macos`, `build-linux` and `build-arch` gate
+    # this transitively. Naming them here as well would draw a second edge to
+    # the same place and say nothing more.
     #
-    # `install-macos` and `install-linux` because the files they install are
-    # the very files attached here -- a package no package manager will
-    # install, or a .dmg that mounts to nothing, must not be published. And
-    # `build-arch` although the release carries no Arch package at all,
-    # because the README sends Arch users to the PKGBUILD: a tag whose recipe
-    # is broken is an incomplete release even when every attached file is
-    # sound, which is exactly how v0.2.0 went out.
-    needs: [build-macos, install-macos, build-linux, build-arch, install-linux]
+    # Nothing reaches the releases page, then, that has not been installed
+    # somewhere and started. The files those jobs install are the very files
+    # attached here: a package no package manager will install, or a .dmg that
+    # mounts to nothing, must not be published. `build-arch` counts too, by way
+    # of install-linux, although the release carries no Arch package at all --
+    # the README sends Arch users to the PKGBUILD, so a tag whose recipe is
+    # broken is an incomplete release even when every attached file is sound,
+    # which is exactly how v0.2.0 went out.
+    needs: [install-macos, install-linux]
     # Only downloads the artifacts and attaches them to the tag: nothing is
     # compiled here, so the cheapest runner does.
     runs-on: ubuntu-24.04
