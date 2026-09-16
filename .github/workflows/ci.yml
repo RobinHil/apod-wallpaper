@@ -478,16 +478,28 @@ jobs:
               dnf install -y "$pkg"
               apod-wallpaper --version
 
-          # The AppImage carries its own libraries, so what this asks is
-          # whether it starts somewhere that is not Debian-shaped. It does not
-          # reach GStreamer: `--version` prints and exits long before a video
-          # APOD would be decoded, so a missing codec inside the bundle is not
-          # what this catches.
+          # An AppImage does not carry everything, and that is by design:
+          # linuxdeploy honours the AppImage excludelist, which names
+          # libfribidi, libglib, libpango, libGL and their kin as "assume the
+          # host has these" -- bundling GLib in particular breaks libsecret and
+          # produces undefined symbols in libgio. Every desktop does have them.
+          # A stock `fedora:latest` is not a desktop and has none of them, so
+          # the base goes in first; without it the run dies on
+          # `libfribidi.so.0: cannot open shared object file`, which says
+          # nothing about the AppImage.
+          #
+          # What is left for the AppImage to bring is precisely what matters:
+          # webkit2gtk, libsoup and GStreamer, none of which is installed here.
+          # That it then starts on a distribution that is not Debian-shaped is
+          # the whole question. It does not reach GStreamer, though:
+          # `--version` prints and exits long before a video APOD would be
+          # decoded, so a codec missing from the bundle is not caught here.
           #
           # `APPIMAGE_EXTRACT_AND_RUN` because a container has no FUSE.
           - case: the AppImage on Fedora
             image: fedora:latest
             script: |
+              dnf install -y gtk3 mesa-libGL
               app=$(ls ./linux/appimage/*.AppImage)
               chmod +x "$app"
               APPIMAGE_EXTRACT_AND_RUN=1 "$app" --version
