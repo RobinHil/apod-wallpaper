@@ -50,6 +50,10 @@ jobs:
         with:
           package_json_file: landing/package.json
 
+      # 24 is the active LTS and the version ci.yml builds the application
+      # with; the two are kept the same on purpose. The Pages actions above
+      # and below run on their own runtime, which is why they are pinned to
+      # releases that ship Node 24 rather than the deprecated Node 20.
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -65,7 +69,7 @@ jobs:
       # this answers correctly for a project site, a user site and a custom
       # domain alike, and the canonical URLs, the hreflang pair, the sitemap
       # and the social cards are all derived from it.
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         id: pages
 
       - name: Build the static site
@@ -127,7 +131,7 @@ jobs:
           du -sh .
           ls -1
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: landing/dist
 
@@ -153,7 +157,7 @@ jobs:
       page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   # Asks the published site the same questions over the network, because a
   # deployment that reports success and then serves something else is a thing
