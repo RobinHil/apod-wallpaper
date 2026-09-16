@@ -468,10 +468,10 @@ jobs:
     # worth building against is what an Arch user has today, which is what this
     # image tracks. Nothing is cached between runs for the same reason.
     #
-    # Deliberately absent from the release job's `needs`. A red run here is a
-    # loud signal, but the release artifacts do not contain this package --
-    # Arch users build it themselves -- and a rolling image that breaks for a
-    # reason of its own must not be able to hold back the .dmg and the .deb.
+    # The release job waits on this one. The cost is real and accepted: this
+    # image is rolling, so a breakage upstream of the project can hold back a
+    # publication. The alternative is worse -- shipping a tag whose PKGBUILD
+    # produces the broken binary, which is exactly how v0.2.0 went out.
     container: archlinux:base-devel
     steps:
       # The image carries base-devel but not git, which `actions/checkout`
@@ -590,7 +590,11 @@ jobs:
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-macos, build-linux]
+    # `build-arch` gates this too, although the release carries no Arch
+    # package: the README sends Arch users to the PKGBUILD, so a tag whose
+    # recipe is broken is an incomplete release even when every attached file
+    # is sound. That is what happened to v0.2.0.
+    needs: [build-macos, build-linux, build-arch]
     # Only downloads the artifacts and attaches them to the tag: nothing is
     # compiled here, so the cheapest runner does.
     runs-on: ubuntu-24.04
