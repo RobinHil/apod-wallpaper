@@ -702,11 +702,13 @@ jobs:
             exit 1
           fi
 
-      # Kept for inspection, deliberately not attached to a release. A binary
-      # Arch package is linked against the webkit2gtk and GStreamer sonames of
-      # the day it was built, and on a rolling distribution that makes it
-      # rubbish within weeks. Arch users build from the PKGBUILD, which is
-      # exactly what this job proves still works.
+      # Uploaded for two readers only: install-linux, which installs it on a
+      # stock Arch image, and a human wanting to inspect a failure. The release
+      # job names the artifacts it attaches precisely so this one is left out;
+      # a binary Arch package is linked against the webkit2gtk and GStreamer
+      # sonames of the day it was built, and on a rolling distribution that
+      # makes it rubbish within weeks. Arch users build from the PKGBUILD,
+      # which is exactly what this job proves still works.
       - uses: actions/upload-artifact@v7
         with:
           name: arch-x86_64
@@ -738,9 +740,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Named one by one, and that is not tidiness. Downloading everything the
+      # run produced would sweep in `arch-x86_64`, which exists only so that
+      # install-linux can install it, and attach it here -- which is what
+      # happened to v0.2.1. A binary Arch package is linked against the
+      # webkit2gtk and GStreamer sonames of the day it was built, and on a
+      # rolling distribution that is rubbish within weeks; Arch users build
+      # from the PKGBUILD, as the notes below tell them to.
       - uses: actions/download-artifact@v8
         with:
-          path: artifacts
+          name: macos-universal
+          path: artifacts/macos
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64
+          path: artifacts/linux
 
       - uses: softprops/action-gh-release@v3
         with:
