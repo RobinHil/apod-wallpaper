@@ -14,9 +14,12 @@
 # run `updpkgsums` in this directory to refresh the checksum below. A fix to
 # the recipe itself, with the upstream version unchanged, bumps `pkgrel`
 # instead: that is what carries a packaging correction to people who already
-# installed the broken build, without inventing a release that does not exist.
-# `pkgrel=1` is one such fix -- see the note above `pnpm tauri build` in
-# build().
+# installed a broken build, without inventing a release that does not exist.
+# A new upstream version resets `pkgrel` to 1, as here.
+#
+# `sha256sums` is SKIP only for as long as the tag it names does not exist.
+# Run `updpkgsums` here as soon as the release is published and commit the
+# result: this must not reach the AUR with the tarball unverified.
 
 pkgname=apod-wallpaper
 pkgver=0.2.1
