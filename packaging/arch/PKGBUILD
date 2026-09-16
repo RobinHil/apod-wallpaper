@@ -11,12 +11,16 @@
 # it at a tag older than the pnpm migration fails for exactly that reason.
 #
 # Before publishing a new version to the AUR, bump `pkgver` to the new tag and
-# run `updpkgsums` in this directory to replace the SKIP below with that
-# tarball's checksum.
+# run `updpkgsums` in this directory to refresh the checksum below. A fix to
+# the recipe itself, with the upstream version unchanged, bumps `pkgrel`
+# instead: that is what carries a packaging correction to people who already
+# installed the broken build, without inventing a release that does not exist.
+# `pkgrel=2` is one such fix -- see the note above `pnpm tauri build` in
+# build().
 
 pkgname=apod-wallpaper
 pkgver=0.2.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day"
 arch=('x86_64' 'aarch64')
 url="https://github.com/RobinHil/apod-wallpaper"
@@ -71,12 +75,18 @@ build() {
   export npm_config_store_dir="$srcdir/.pnpm-store"
 
   pnpm install --frozen-lockfile
-  # The panel, into dist/, which `tauri::generate_context!` embeds at compile
-  # time. `cargo build` alone would embed whatever dist/ happened to hold.
-  pnpm build
 
-  cd src-tauri
-  cargo build --release --locked
+  # Through the Tauri CLI, not `cargo build`, and that is not a stylistic
+  # preference. Tauri decides between a development and a production build from
+  # the `custom-protocol` feature: without it the binary loads its panel from
+  # `devUrl`, so an installed application starts and then reports that it
+  # cannot reach localhost. The CLI sets the feature; a bare `cargo build
+  # --release` does not, and produces that binary silently.
+  #
+  # `--no-bundle` stops after the binary, which is all a distribution package
+  # wants: `package()` below installs the pieces itself. The CLI also runs
+  # `beforeBuildCommand`, so the panel is built from here too.
+  pnpm tauri build --no-bundle
 }
 
 check() {
