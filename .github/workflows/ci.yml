@@ -223,23 +223,48 @@ jobs:
             exit 1
           fi
 
-      # Everything above inspects the .app sitting in the build directory. The
-      # .dmg is what is actually published, and nothing had ever opened it: an
-      # image that mounts to an empty volume, or carries the wrong thing, would
-      # upload and attach to a release looking perfectly normal.
-      #
-      # So the app is installed the way a person installs it -- mount, drag to
-      # /Applications, eject -- and started from there.
-      #
-      # Two limits worth stating. Gatekeeper is not exercised: these builds are
-      # unsigned, and a file that CI produced carries no quarantine attribute,
-      # so this says nothing about the `xattr -d` step the README gives users.
-      # And only the slice matching the runner runs; the Intel one is checked
-      # by `lipo` and `otool` above and executed nowhere.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-universal
+          if-no-files-found: error
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+  # Production is one job, installing what it produced is another. This one
+  # takes the .dmg from the artifact store rather than from the build tree, so
+  # what it mounts is byte for byte what a release attaches and a person
+  # downloads.
+  #
+  # A Mac cannot be a container, which is why macOS is not a case in
+  # install-linux's matrix but a job of its own on a macOS runner.
+  #
+  # Two limits worth stating. Gatekeeper is not exercised: these builds are
+  # unsigned, and a file that CI produced carries no quarantine attribute, so
+  # this says nothing about the `xattr -d` step the README gives users. And
+  # only the slice matching the runner runs; the Intel one is checked by `lipo`
+  # and `otool` in build-macos and executed nowhere.
+  install-macos:
+    name: Install the macOS bundle
+    needs: build-macos
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      # Only for package.json: the version the installed binary reports is
+      # compared against what the project declares, not against what another
+      # job's binary happened to print.
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-universal
+          path: artifacts
+
+      - run: ls -la artifacts
+
+      # Mount, drag to /Applications, eject: the way a person installs it.
       - name: Install it from the .dmg and start it
         run: |
           set -euo pipefail
-          dmg=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          dmg=$(ls artifacts/*.dmg)
           echo "mounting $dmg"
           mount=$(mktemp -d)
           hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -quiet
@@ -270,12 +295,6 @@ jobs:
             echo "::error::$installed embeds no frontend asset, so the panel would load from devUrl"
             exit 1
           fi
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: macos-universal
-          if-no-files-found: error
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
   build-linux:
     name: Build the Linux packages
@@ -435,7 +454,7 @@ jobs:
   # and lets that distribution's package manager resolve what the package
   # declares. Nothing is compiled here, and it is the only place a glibc other
   # than the runner's ever sees this binary.
-  smoke-install:
+  install-linux:
     name: Install ${{ matrix.case }}
     needs: [build-linux, build-arch]
     runs-on: ubuntu-24.04
@@ -663,10 +682,10 @@ jobs:
     # although the release carries no Arch package, because the README sends
     # Arch users to the PKGBUILD and a tag whose recipe is broken is an
     # incomplete release even when every attached file is sound -- which is
-    # what happened to v0.2.0. And `smoke-install` because the files it
+    # what happened to v0.2.0. And `install-linux` because the files it
     # installs are the ones attached here: a package that no package manager
     # will install must not reach the releases page.
-    needs: [build-macos, build-linux, build-arch, smoke-install]
+    needs: [build-macos, install-macos, build-linux, build-arch, install-linux]
     # Only downloads the artifacts and attaches them to the tag: nothing is
     # compiled here, so the cheapest runner does.
     runs-on: ubuntu-24.04
