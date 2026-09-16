@@ -37,3 +37,5 @@ packaging/arch/src/
 packaging/arch/pkg/
 packaging/arch/*.tar.gz
 packaging/arch/*.pkg.tar.*
+# where CI unpacks the built package to inspect it
+packaging/arch/inspect/

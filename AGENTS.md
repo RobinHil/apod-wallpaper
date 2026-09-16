@@ -17,8 +17,11 @@ pnpm install                                 # first time
 pnpm tauri dev                               # dev, with a live-reloading panel
 pnpm bundle                                  # release packages for this machine
 pnpm bundle --target universal-apple-darwin  # what CI ships for macOS
+./packaging/linux/bundle.sh                  # the same, on Linux, with what the AppImage needs
 pnpm exec tsc --noEmit                       # frontend typecheck (there is no ESLint)
 ```
+
+On Linux prefer the script over `pnpm bundle`: the AppImage step needs four environment variables and two host packages it does not check for, and the script is where they are kept. The `.deb` and the `.rpm` come out either way.
 
 The checks CI gates on, all from `src-tauri/` except the last:
 
@@ -152,11 +155,13 @@ A tray item that fails to build is logged and stepped over. On macOS that is def
 
 `tauri.conf.json` lists every bundle target and Tauri skips the ones foreign to the host, so one list covers both platforms. `bundle.linux.deb.depends` and `.rpm.depends` name the GStreamer and appindicator runtime packages.
 
-Arch has no Tauri bundler, so `packaging/arch/PKGBUILD` assembles the package from a plain `cargo build --release` plus the desktop entry beside it. That desktop entry is deliberately not `NoDisplay`: without a tray, launching the app from the overview is the only route to the panel that always works. The PKGBUILD builds the published tag, not the working tree, so it only succeeds against a tag that already carries `pnpm-lock.yaml`.
+Arch has no Tauri bundler, so `packaging/arch/PKGBUILD` assembles the package itself, from `pnpm tauri build --no-bundle` plus the desktop entry beside it. Through the CLI rather than `cargo build --release`, and that is not a stylistic preference: Tauri decides between a development and a production build from the `custom-protocol` feature, which the CLI sets and a bare cargo invocation does not, so `cargo build --release` yields a binary that loads its panel from `devUrl` and, once installed, reports that it cannot reach localhost. Nothing warns about it, which is why `build-arch` exists in CI: it builds the PKGBUILD in an `archlinux:base-devel` container, from the checkout rather than from the published tag, then unpacks the package and fails if the binary embeds no `index-*.js`. That assertion is the whole point of the job; a development build is valid in every other respect. That desktop entry is deliberately not `NoDisplay`: without a tray, launching the app from the overview is the only route to the panel that always works. The PKGBUILD builds the published tag, not the working tree, so it only succeeds against a tag that already carries `pnpm-lock.yaml`.
+
+`bundle.linux.deb.depends` and `bundle.linux.rpm.depends` are package names written by hand, and the RPM ones are Fedora's although the package is built on Ubuntu. `smoke-install` in CI is what resolves them: it takes the packages build-linux produced, installs the `.deb` in `debian:stable-slim` and the `.rpm` in `fedora:latest`, and starts the binary with `--version`, which loads every shared library it names without needing a display. The third case runs the AppImage on Fedora, which asks only whether it starts away from a Debian-shaped host; `--version` exits before GStreamer is reached, so a codec missing from the bundle is not something this catches. Nothing is compiled in that job, and it is the only place a glibc other than the runner's ever sees this binary.
 
 `bundle.linux.appimage.bundleMediaFramework` is `true`, and it matters more than it looks: Tauri defaults it to `false`, which produces an AppImage carrying GStreamer's libraries and not one codec. The failure is invisible until someone hits a video APOD, because everything else works. The Linux CI job installs the runtime plugin packages for the same reason, since linuxdeploy can only bundle what is present on the builder, and sets `GSTREAMER_INCLUDE_BAD_PLUGINS` for the OpenH264 decoder. OpenH264 rather than libav, so the licence section of the README stays true.
 
-Building the AppImage on a developer machine needs `patchelf` everywhere and, on Arch, three environment variables and a package; the README lists them under "Building from source" with the reason for each.
+Building the AppImage on a developer machine needs `patchelf` everywhere and, on Arch, two more environment variables and a package. All of it lives in `packaging/linux/bundle.sh`, which the Linux CI job runs as well: the variables used to be spelled out in the workflow and again in the README, where they drifted. Add one there, not in either. The script sets nothing it cannot explain and refuses to start when a program it needs is missing, rather than failing in `linuxdeploy` twenty minutes later.
 
 ## Tests
 
