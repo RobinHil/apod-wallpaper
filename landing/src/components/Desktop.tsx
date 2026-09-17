@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { useCopy } from "../i18n";
 
 /**
@@ -11,6 +13,11 @@ import { useCopy } from "../i18n";
  * `still` is null whenever the APOD API has not answered -- an exhausted
  * quota, no network, an outage -- and the frame falls back to a sky of its
  * own rather than to an empty plate.
+ *
+ * That sky stays painted underneath while the picture arrives, and the
+ * picture fades in only once it has loaded. A JPEG straight from NASA is
+ * baseline, not progressive, so without this the frame paints itself band by
+ * band from the top over however long the download takes.
  */
 export function Desktop({
   still,
@@ -23,26 +30,46 @@ export function Desktop({
 }) {
   const copy = useCopy();
 
+  // Keyed on the address, so a new picture goes back behind the sky rather
+  // than showing half of itself over the previous one.
+  const [loaded, setLoaded] = useState<string | null>(null);
+  const shown = loaded === still;
+
   return (
     <div className={`relative overflow-hidden bg-[#05070c] ${className}`}>
-      {still === null ? (
-        <FallbackSky />
-      ) : fit === "blur_fill" ? (
-        <>
-          <img
-            src={still}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 size-full scale-[1.15] object-cover brightness-[0.45] blur-[26px]"
-          />
-          <img
-            src={still}
-            alt={copy.hero.altBlurFill}
-            className="relative size-full object-contain"
-          />
-        </>
-      ) : (
-        <img src={still} alt={copy.hero.altCrop} className="size-full object-cover" />
+      <FallbackSky />
+
+      {still !== null && (
+        <div
+          className={`absolute inset-0 transition-opacity duration-700 ${shown ? "opacity-100" : "opacity-0"}`}
+        >
+          {fit === "blur_fill" ? (
+            <>
+              <img
+                src={still}
+                alt=""
+                aria-hidden="true"
+                decoding="async"
+                className="absolute inset-0 size-full scale-[1.15] object-cover brightness-[0.45] blur-[26px]"
+              />
+              <img
+                src={still}
+                alt={copy.hero.altBlurFill}
+                decoding="async"
+                onLoad={() => setLoaded(still)}
+                className="relative size-full object-contain"
+              />
+            </>
+          ) : (
+            <img
+              src={still}
+              alt={copy.hero.altCrop}
+              decoding="async"
+              onLoad={() => setLoaded(still)}
+              className="size-full object-cover"
+            />
+          )}
+        </div>
       )}
 
       {/* The glass of the screen: one highlight across the top, one vignette. */}

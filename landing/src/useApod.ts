@@ -8,7 +8,6 @@ export interface Apod {
   copyright?: string;
   media_type: string;
   url: string;
-  hdurl?: string;
   thumbnail_url?: string;
 }
 
@@ -46,8 +45,17 @@ export function useApod(): Apod | null {
   return apod;
 }
 
-/** The still for an entry, which is the thumbnail when the entry is a video. */
+/**
+ * The still for an entry, which is the thumbnail when the entry is a video.
+ *
+ * `url` and not `hdurl`, although the field is right there and the picture is
+ * the point of the page: `hdurl` is the archival original, sized for the
+ * application to compose a wallpaper from, and it is routinely twenty to fifty
+ * times the weight of `url`. One recent entry: 27.1 MB against 484 kB, for a
+ * frame this page never draws wider than about 700 CSS pixels. `url` is the
+ * copy NASA itself puts on the APOD page, and it is the one to show here.
+ */
 export function apodStill(apod: Apod): string {
   if (apod.media_type === "video") return apod.thumbnail_url ?? apod.url;
-  return apod.hdurl ?? apod.url;
+  return apod.url;
 }

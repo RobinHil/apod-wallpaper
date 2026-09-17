@@ -23,6 +23,13 @@
     <!-- The typefaces ship with the site, see scripts/fetch-fonts.mjs: no
          third-party connection on the critical path, and no visitor of this
          page is announced to a font server. -->
+
+    <!-- The two hosts the page does reach, and it reaches them in sequence:
+         the picture's address is only known once the API has answered, so
+         without this the visitor waits for two handshakes one after the
+         other. Neither is a new party, both are contacted anyway. -->
+    <link rel="preconnect" href="https://api.nasa.gov" crossorigin />
+    <link rel="preconnect" href="https://apod.nasa.gov" />
   </head>
 
   <body class="bg-bg text-text antialiased [text-rendering:optimizeLegibility]">
