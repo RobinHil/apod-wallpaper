@@ -8,6 +8,12 @@ Terminal=false
 Categories=Utility;
 Keywords=wallpaper;background;desktop;NASA;astronomy;APOD;
 
+# GTK takes the Wayland app_id and the X11 WM_CLASS from the binary name, not
+# from this file's name, so without this line the shell finds no entry for the
+# window and gives it the placeholder icon. Tauri's own .deb and .rpm entries
+# carry the same key, generated from the executable name.
+StartupWMClass=apod-wallpaper
+
 # Deliberately visible in the application grid, and deliberately not marked
 # NoDisplay. GNOME has no system tray without an extension, so launching the
 # application again is the one route back to the settings panel that is always
