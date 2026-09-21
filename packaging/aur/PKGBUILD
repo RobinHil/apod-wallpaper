@@ -106,7 +106,7 @@ package() {
   # Installed under the name Tauri's own bundler uses for the .deb and the
   # .rpm, spaces and all, so that there is one desktop entry name to document
   # rather than one per packaging route.
-  install -Dm644 "packaging/arch/$pkgname.desktop" \
+  install -Dm644 "packaging/aur/$pkgname.desktop" \
     "$pkgdir/usr/share/applications/APOD Wallpaper.desktop"
 
   for size in 32 64 128; do

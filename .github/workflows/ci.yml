@@ -121,7 +121,7 @@ jobs:
           npm_version=$(node -p "require('./package.json').version")
           conf_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
           cargo_version=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d'"' -f2)
-          pkgbuild_version=$(grep -m1 '^pkgver=' packaging/arch/PKGBUILD | cut -d= -f2)
+          pkgbuild_version=$(grep -m1 '^pkgver=' packaging/aur/PKGBUILD | cut -d= -f2)
           echo "package.json=$npm_version tauri.conf.json=$conf_version Cargo.toml=$cargo_version PKGBUILD=$pkgbuild_version"
           for declared in "$conf_version" "$cargo_version" "$pkgbuild_version"; do
             if [ "$npm_version" != "$declared" ]; then
@@ -375,7 +375,7 @@ jobs:
 
       # `.deb` for Debian and Ubuntu, `.rpm` for Fedora and RHEL, and an
       # AppImage for everything else, Arch included -- next to which the
-      # PKGBUILD in packaging/arch/ builds natively from source.
+      # PKGBUILD in packaging/aur/ builds natively from source.
       #
       # Through the script rather than `pnpm bundle` with the environment
       # spelled out here, so that this job and a developer's machine run the
@@ -580,7 +580,7 @@ jobs:
             "${{ matrix.image }}" \
             bash /steps.sh
 
-  # Arch is the one target Tauri has no bundler for, so `packaging/arch/PKGBUILD`
+  # Arch is the one target Tauri has no bundler for, so `packaging/aur/PKGBUILD`
   # assembles the package itself -- and until this job, nothing checked that it
   # still worked. It had been quietly building a development binary: one that
   # installs, sets a wallpaper, then shows a connection error where the panel
@@ -618,12 +618,12 @@ jobs:
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          pkgver=$(grep -m1 '^pkgver=' packaging/arch/PKGBUILD | cut -d= -f2)
+          pkgver=$(grep -m1 '^pkgver=' packaging/aur/PKGBUILD | cut -d= -f2)
           git archive --format=tar.gz \
             --prefix="apod-wallpaper-$pkgver/" \
-            -o "packaging/arch/apod-wallpaper-$pkgver.tar.gz" HEAD
+            -o "packaging/aur/apod-wallpaper-$pkgver.tar.gz" HEAD
 
-          cd packaging/arch
+          cd packaging/aur
           sed -i 's|^source=.*|source=("$pkgname-$pkgver.tar.gz")|' PKGBUILD
           sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" PKGBUILD
           echo "--- the two lines that differ from the published PKGBUILD ---"
@@ -641,7 +641,7 @@ jobs:
       # declare is one the build no longer finds, here, rather than on a user's
       # machine. `check()` in the PKGBUILD runs the test suite as part of this.
       - name: Build the package
-        working-directory: packaging/arch
+        working-directory: packaging/aur
         run: sudo -u builder makepkg -s --noconfirm
 
       # The regression that prompted this job. Tauri picks a development or a
@@ -650,7 +650,7 @@ jobs:
       # compiles, links, passes its tests and installs; its one visible trace
       # is that it embeds no frontend and reaches for `devUrl` instead.
       - name: Check the package carries a production binary
-        working-directory: packaging/arch
+        working-directory: packaging/aur
         run: |
           set -euo pipefail
           pkg=$(ls ./*-x86_64.pkg.tar.zst | grep -v -- '-debug-')
@@ -691,7 +691,7 @@ jobs:
       # right here. `--version` prints and exits before Tauri starts, so it
       # needs no display.
       - name: Smoke test the packaged binary
-        working-directory: packaging/arch
+        working-directory: packaging/aur
         run: |
           set -euo pipefail
           printed=$(inspect/usr/bin/apod-wallpaper --version)
@@ -714,7 +714,7 @@ jobs:
           name: arch-x86_64
           if-no-files-found: error
           retention-days: 14
-          path: packaging/arch/*.pkg.tar.zst
+          path: packaging/aur/*.pkg.tar.zst
 
   release:
     name: Publish release
@@ -770,6 +770,6 @@ jobs:
 
             **Linux**: `.deb` for Debian and Ubuntu, `.rpm` for Fedora and
             RHEL, and an `.AppImage` that runs anywhere. GNOME only for now.
-            Arch users can build from `packaging/arch/PKGBUILD` instead.
+            Arch users can build from `packaging/aur/PKGBUILD` instead.
 
             See the README for details.

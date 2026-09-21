@@ -209,10 +209,10 @@ pnpm bundle --target universal-apple-darwin
 
 Naming a target moves the output under `src-tauri/target/<triple>/release/bundle/`, so `universal-apple-darwin/release/bundle/` here.
 
-Arch is the one target Tauri has no bundler for, so `packaging/arch/PKGBUILD` builds it natively instead:
+Arch is the one target Tauri has no bundler for, so `packaging/aur/PKGBUILD` builds it natively instead:
 
 ```bash
-cd packaging/arch
+cd packaging/aur
 makepkg -si
 ```
 
@@ -280,7 +280,7 @@ chmod +x APOD*.AppImage
 
 The packages are built on Ubuntu 24.04, so they need **glibc 2.39 or later**: Debian 13, Ubuntu 24.04, Fedora 40 and anything more recent, Arch included. Debian 12 and Ubuntu 22.04 are too old for them, and that is a deliberate trade rather than an oversight: distributions are not cross-compiled for one another, what decides where a package runs is the glibc it was linked against, and a newer build reaches fewer systems rather than more. Anyone on one of those two can still build from source, where nothing requires a recent glibc.
 
-For Arch, `packaging/arch/PKGBUILD` builds natively from source instead; see [Building from source](#building-from-source).
+For Arch, `packaging/aur/PKGBUILD` builds natively from source instead; see [Building from source](#building-from-source).
 
 Nothing appears when it starts, bar the first launch, which opens the panel once and applies the first wallpaper. If you want the tray icon, install the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/); without it the application is simply icon-less and everything still works.
 
@@ -393,7 +393,7 @@ apod-wallpaper/
 |  |- classes.ts                 # Utility strings more than one card needs
 |  |- components/                # One file per card, plus the SVG icons
 |  `- styles.css                 # Tailwind entry point: the palette, light and dark
-|- packaging/arch/               # What Tauri has no bundler for
+|- packaging/aur/                # What Tauri has no bundler for
 |  |- PKGBUILD
 |  `- apod-wallpaper.desktop
 |- index.html                    # Mount point for the panel

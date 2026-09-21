@@ -33,9 +33,9 @@ src-tauri/gen/schemas
 cache/
 
 # makepkg output, next to the PKGBUILD it is built from
-packaging/arch/src/
-packaging/arch/pkg/
-packaging/arch/*.tar.gz
-packaging/arch/*.pkg.tar.*
+packaging/aur/src/
+packaging/aur/pkg/
+packaging/aur/*.tar.gz
+packaging/aur/*.pkg.tar.*
 # where CI unpacks the built package to inspect it
-packaging/arch/inspect/
+packaging/aur/inspect/
