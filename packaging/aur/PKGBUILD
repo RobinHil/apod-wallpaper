@@ -22,7 +22,7 @@
 # result: this must not reach the AUR with the tarball unverified.
 
 pkgname=apod-wallpaper
-pkgver=0.2.3
+pkgver=0.2.4
 pkgrel=1
 pkgdesc="Sets NASA's Astronomy Picture of the Day as your desktop wallpaper, once a day"
 arch=('x86_64' 'aarch64')
@@ -67,7 +67,7 @@ optdepends=(
 )
 
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('0a2b9a2911d3f1c5c837e2b050a2c3d2c964487dba6d204a21022d48108046a9')
+sha256sums=('SKIP')
 
 build() {
   cd "$pkgname-$pkgver"
