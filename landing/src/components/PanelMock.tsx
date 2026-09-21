@@ -114,7 +114,7 @@ export function PanelMock({
             <MonitorIcon className="size-[14px] shrink-0" />
             2560 x 1440
           </span>
-          <span>v0.2.2</span>
+          <span>v0.2.3</span>
         </footer>
       </div>
     </div>
