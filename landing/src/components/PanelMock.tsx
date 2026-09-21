@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { ExternalLinkIcon, GlobeIcon, MonitorIcon } from "./Icons";
+import { ExternalLinkIcon, MonitorIcon } from "./Icons";
+import { Logo } from "./Logo";
 
 /**
  * The settings panel, as it looks on a machine running the dark system
@@ -10,9 +11,9 @@ import { ExternalLinkIcon, GlobeIcon, MonitorIcon } from "./Icons";
  * its palette, token for token, its 10px plates and hairline borders, and the
  * cards in the order they actually appear -- so that what the page promises
  * and what the download opens are recognisably the same window. Its header
- * carries the panel's globe rather than the application icon, because that is
- * what the real window shows, and its labels stay in English whatever
- * language the page is read in, because the application is English.
+ * carries the application icon, because that is what the real window shows,
+ * and its labels stay in English whatever language the page is read in,
+ * because the application is English.
  */
 
 /** The panel's own dark palette, kept out of the page's token namespace. */
@@ -72,7 +73,7 @@ export function PanelMock({
     >
       <header className="flex items-center justify-between border-b border-b-[var(--p-border)] bg-[var(--p-card)] px-[16px] py-[12px]">
         <div className="flex items-center gap-[8px] font-semibold">
-          <GlobeIcon className="size-[18px] shrink-0 text-[var(--p-accent)]" />
+          <Logo className="size-[18px] shrink-0" />
           <span>APOD Wallpaper</span>
         </div>
         <span className="rounded-[99px] bg-[var(--p-online-bg)] px-[10px] py-[3px] text-[11px] font-semibold text-[var(--p-online)]">

@@ -1,5 +1,5 @@
 import type { UiState } from "../types";
-import { GlobeIcon } from "./Icons";
+import { AppIcon } from "./Icons";
 
 const PILL = "rounded-[99px] px-[10px] py-[3px] text-[11px] font-semibold";
 const LOADING = `${PILL} bg-border text-text-dim`;
@@ -23,7 +23,7 @@ export function TopBar({ state }: { state: UiState | null }) {
   return (
     <header className="flex items-center justify-between border-b border-b-border bg-card px-[16px] py-[12px]">
       <div className="flex items-center gap-[8px] font-semibold">
-        <GlobeIcon className="size-[18px] text-accent" />
+        <AppIcon className="size-[18px]" />
         <span>APOD Wallpaper</span>
       </div>
       <span className={status.className}>{status.label}</span>
