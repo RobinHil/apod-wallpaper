@@ -13,6 +13,8 @@ GNOME is named rather than "Linux" on purpose. The wallpaper is set through GNOM
 
 Built with [Tauri 2](https://tauri.app): a Rust backend and a settings panel written in React and TypeScript, styled with Tailwind CSS.
 
+The project has a page of its own at [robinhil.github.io/apod-wallpaper](https://robinhil.github.io/apod-wallpaper/), in English and [in French](https://robinhil.github.io/apod-wallpaper/fr/): what the application does, the day's picture and the download links. It is built from `landing/` and published to GitHub Pages by its own workflow.
+
 > [!NOTE]
 > This project was written with heavy AI assistance, and is stated up front so you can read the code knowing where it came from. The design decisions, the review of every change and the testing on real hardware are mine; a large part of the code itself was generated. Judge it on what it does, and on the reasons given in [Design notes](#design-notes), rather than on who typed it.
 
@@ -396,8 +398,11 @@ apod-wallpaper/
 |- packaging/aur/                # What Tauri has no bundler for
 |  |- PKGBUILD
 |  `- apod-wallpaper.desktop
+|- landing/                      # The page on GitHub Pages, unrelated to the app
 |- index.html                    # Mount point for the panel
-`- .github/workflows/ci.yml      # Lint/test gate on both platforms, bundles, release
+`- .github/workflows/
+   |- ci.yml                     # Lint/test gate on both platforms, bundles, release
+   `- landing.yml                # Builds landing/ and publishes it to Pages
 ```
 
 ---
