@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { eyebrow, heading, lede, primary, secondary, shell } from "../classes";
+import { selectContents, writeClipboard } from "../clipboard";
 import { useCopy } from "../i18n";
 import { API_KEY_SIGNUP, README, RELEASES, REPO } from "../links";
 import {
@@ -34,43 +35,57 @@ const PLATFORMS: { id: "macos" | "linux"; icon: ReactNode; command: string }[] =
  *
  * The button lives inside the frame so the block stays one object, and the
  * text is padded on its right by the room the button takes, which is what
- * keeps a wrapped line from running underneath it. A browser that refuses
- * the clipboard changes nothing: the command is still there to be selected.
+ * keeps a wrapped line from running underneath it.
+ *
+ * Both clipboards can be refused, so both are tried, and when neither answers
+ * the command is selected instead: a button that silently does nothing reads
+ * as broken, and one that leaves the keyboard a line away from the same
+ * result is still a button that worked.
  */
 function Command({ command }: { command: string }) {
   const copy = useCopy();
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "selected" | "failed">("idle");
+  const code = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (!copied) return;
+    if (state === "idle") return;
 
-    const timer = window.setTimeout(() => setCopied(false), 1800);
+    const timer = window.setTimeout(() => setState("idle"), 1800);
     return () => window.clearTimeout(timer);
-  }, [copied]);
+  }, [state]);
 
-  const label = copied ? copy.download.copied : copy.download.copyCommand;
+  const label = {
+    idle: copy.download.copyCommand,
+    copied: copy.download.copied,
+    selected: copy.download.copySelected,
+    failed: copy.download.copyFailed,
+  }[state];
+
+  async function run() {
+    if (await writeClipboard(command)) {
+      setState("copied");
+      return;
+    }
+
+    setState(selectContents(code.current) ? "selected" : "failed");
+  }
 
   return (
     <div className="relative mt-[12px]">
       <pre className="rounded-[10px] border border-border bg-bg/80 py-[11px] pl-[14px] pr-[52px] text-[12.5px] leading-[1.6] break-words whitespace-pre-wrap text-text-dim">
-        <code>{command}</code>
+        <code ref={code}>{command}</code>
       </pre>
       <button
         type="button"
         className="absolute top-[8px] right-[8px] inline-flex size-[30px] items-center justify-center rounded-[8px] border border-border bg-plate text-text-dim transition hover:border-accent hover:text-text"
         aria-label={label}
         title={label}
-        onClick={() => {
-          navigator.clipboard?.writeText(command).then(
-            () => setCopied(true),
-            () => setCopied(false),
-          );
-        }}
+        onClick={run}
       >
-        {copied ? (
+        {state === "copied" ? (
           <CheckIcon className="size-[15px] text-accent" />
         ) : (
-          <CopyIcon className="size-[15px]" />
+          <CopyIcon className={`size-[15px] ${state === "idle" ? "" : "text-ember"}`} />
         )}
       </button>
     </div>

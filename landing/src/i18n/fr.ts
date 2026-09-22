@@ -163,6 +163,8 @@ export const fr: Copy = {
     },
     copyCommand: "Copier la commande",
     copied: "Copié",
+    copySelected: "Copie refusée : la commande est sélectionnée, copiez-la à la main",
+    copyFailed: "Copie refusée : sélectionnez la commande",
     ctaTitle: "Windows est la prochaine étape. Quatre morceaux de code l'en séparent.",
     ctaBody:
       "Poser le fond d'écran, être prévenu d'un changement d'écran, mesurer l'écran, décoder une image de vidéo. Tout le reste est déjà écrit et partagé. Le dépôt le détaille, et les pull requests sont bienvenues.",

@@ -159,6 +159,8 @@ export const en = {
     },
     copyCommand: "Copy the command",
     copied: "Copied",
+    copySelected: "Could not copy: the command is selected, copy it by hand",
+    copyFailed: "Could not copy: select the command instead",
     ctaTitle: "Windows is next. Four pieces of code stand between it and your desktop.",
     ctaBody:
       "Setting the wallpaper, hearing about screen changes, measuring the screen, decoding a frame. Everything else is already written and shared. The repository says so in detail, and pull requests are welcome.",
