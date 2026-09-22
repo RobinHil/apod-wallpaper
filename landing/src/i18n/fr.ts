@@ -161,6 +161,8 @@ export const fr: Copy = {
         note: "GNOME n'affiche aucune icône de statut par défaut. L'application est faite pour s'en passer, et la relancer depuis la vue d'ensemble ouvre le panneau.",
       },
     },
+    copyCommand: "Copier la commande",
+    copied: "Copié",
     ctaTitle: "Windows est la prochaine étape. Quatre morceaux de code l'en séparent.",
     ctaBody:
       "Poser le fond d'écran, être prévenu d'un changement d'écran, mesurer l'écran, décoder une image de vidéo. Tout le reste est déjà écrit et partagé. Le dépôt le détaille, et les pull requests sont bienvenues.",

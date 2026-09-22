@@ -157,6 +157,8 @@ export const en = {
         note: "Stock GNOME shows no tray icons. The app is built not to need one, and launching it again from the overview opens the panel:",
       },
     },
+    copyCommand: "Copy the command",
+    copied: "Copied",
     ctaTitle: "Windows is next. Four pieces of code stand between it and your desktop.",
     ctaBody:
       "Setting the wallpaper, hearing about screen changes, measuring the screen, decoding a frame. Everything else is already written and shared. The repository says so in detail, and pull requests are welcome.",

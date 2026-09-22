@@ -1,8 +1,15 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { eyebrow, heading, lede, primary, secondary, shell } from "../classes";
 import { useCopy } from "../i18n";
 import { API_KEY_SIGNUP, README, RELEASES, REPO } from "../links";
-import { AppleIcon, CheckIcon, DownloadIcon, GithubIcon, TerminalIcon } from "./Icons";
+import {
+  AppleIcon,
+  CheckIcon,
+  CopyIcon,
+  DownloadIcon,
+  GithubIcon,
+  TerminalIcon,
+} from "./Icons";
 import { Reveal } from "./Reveal";
 
 /**
@@ -21,6 +28,54 @@ const PLATFORMS: { id: "macos" | "linux"; icon: ReactNode; command: string }[] =
     command: "sudo apt install ./APOD*.deb",
   },
 ];
+
+/**
+ * A command, and the button that copies it.
+ *
+ * The button lives inside the frame so the block stays one object, and the
+ * text is padded on its right by the room the button takes, which is what
+ * keeps a wrapped line from running underneath it. A browser that refuses
+ * the clipboard changes nothing: the command is still there to be selected.
+ */
+function Command({ command }: { command: string }) {
+  const copy = useCopy();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+
+    const timer = window.setTimeout(() => setCopied(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const label = copied ? copy.download.copied : copy.download.copyCommand;
+
+  return (
+    <div className="relative mt-[12px]">
+      <pre className="rounded-[10px] border border-border bg-bg/80 py-[11px] pl-[14px] pr-[52px] text-[12.5px] leading-[1.6] break-words whitespace-pre-wrap text-text-dim">
+        <code>{command}</code>
+      </pre>
+      <button
+        type="button"
+        className="absolute top-[8px] right-[8px] inline-flex size-[30px] items-center justify-center rounded-[8px] border border-border bg-plate text-text-dim transition hover:border-accent hover:text-text"
+        aria-label={label}
+        title={label}
+        onClick={() => {
+          navigator.clipboard?.writeText(command).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          );
+        }}
+      >
+        {copied ? (
+          <CheckIcon className="size-[15px] text-accent" />
+        ) : (
+          <CopyIcon className="size-[15px]" />
+        )}
+      </button>
+    </div>
+  );
+}
 
 export function Download() {
   const copy = useCopy();
@@ -78,9 +133,7 @@ export function Download() {
                     {text.note}
                   </p>
 
-                  <pre className="mt-[12px] rounded-[10px] border border-border bg-bg/80 px-[14px] py-[11px] text-[12.5px] leading-[1.6] break-words whitespace-pre-wrap text-text-dim">
-                    <code>{platform.command}</code>
-                  </pre>
+                  <Command command={platform.command} />
                 </article>
               </Reveal>
             );
