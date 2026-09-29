@@ -148,7 +148,7 @@ export const en = {
         name: "macOS",
         requires: "13.3 or later, Apple silicon or Intel",
         formats: ["One universal .dmg"],
-        note: "The build is unsigned, so clear the quarantine flag once after installing:",
+        note: "It is not notarized, so macOS refuses the first launch: choose Done, then Open Anyway in System Settings > Privacy & Security, or clear the quarantine flag once:",
       },
       linux: {
         name: "Linux, GNOME",

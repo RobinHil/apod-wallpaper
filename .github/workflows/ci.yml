@@ -765,7 +765,9 @@ jobs:
           # macOS users need.
           body: |
             **macOS**: one universal `.dmg`, for Apple silicon and Intel alike.
-            It is unsigned, so after installing run
+            It is not notarized, so the first launch is refused with only
+            *Move to Trash* and *Done*: choose *Done*, then click *Open Anyway*
+            in System Settings > Privacy & Security, or run
             `xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"`.
 
             **Linux**: `.deb` for Debian and Ubuntu, `.rpm` for Fedora and

@@ -152,7 +152,7 @@ export const fr: Copy = {
         name: "macOS",
         requires: "13.3 ou plus récent, Apple silicon ou Intel",
         formats: ["Un .dmg universel"],
-        note: "Le paquet n'est pas signé : effacez une fois l'attribut de quarantaine après l'installation.",
+        note: "L'app n'est pas notariée, donc macOS refuse le premier lancement : choisissez « Terminé », puis « Ouvrir quand même » dans Réglages Système > Confidentialité et sécurité, ou effacez une fois l'attribut de quarantaine :",
       },
       linux: {
         name: "Linux, GNOME",

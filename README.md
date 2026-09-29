@@ -252,13 +252,17 @@ Release builds are downloadable from the [releases page](https://github.com/Robi
 
 There is one `.dmg` and it is universal: the same file runs on Apple silicon and on Intel.
 
-Open the `.dmg` and drag the application into `Applications`. The builds are **not signed**, an Apple code-signing certificate is a paid subscription -- so the first launch is refused with a message about the app being damaged. That is Gatekeeper's quarantine flag, not a corrupted download. Clear it once:
+Open the `.dmg` and drag the application into `Applications`. The builds are **neither signed with a Developer ID nor notarized**, both of which require a paid Apple Developer membership, so Gatekeeper refuses the first launch of a copy downloaded through a browser: *"Apple could not verify "APOD Wallpaper" is free of malware that may harm your Mac or compromise your privacy."* That dialog offers only *Move to Trash* and *Done*. Nothing in how the app is built can add an *Open* button to it; only notarization does that. Choose **Done**, not *Move to Trash*, then allow the app in one of the two ways below. Either is needed once per downloaded version, since each new `.dmg` carries a new quarantine flag.
+
+**From System Settings.** Right after the refused launch, open *System Settings > Privacy & Security* and scroll down to the *Security* section, where macOS reports that "APOD Wallpaper" was blocked. Click **Open Anyway**, then confirm with *Open Anyway* again and your password or Touch ID when asked. The button only stays there for about an hour after the refused launch; if it is gone, launch the app again to bring it back.
+
+**From a terminal**, by clearing the quarantine flag the browser put on the download, which is what triggers the check in the first place:
 
 ```bash
 xattr -d com.apple.quarantine "/Applications/APOD Wallpaper.app"
 ```
 
-Alternatively, right-click the app, choose *Open* and confirm, or allow it from *System Settings > Privacy & Security* right after the failed launch.
+Since macOS 15, right-clicking the app and choosing *Open* no longer gets past the check: it shows the same two-button dialog.
 
 The first time the app sets the wallpaper, macOS asks for permission to control **System Events**: that Apple event is how the desktop picture is set. If you refuse, re-enable it under *System Settings > Privacy & Security > Automation*.
 
@@ -579,7 +583,11 @@ busctl --user call org.gnome.Mutter.DisplayConfig /org/gnome/Mutter/DisplayConfi
 gst-inspect-1.0 | grep -iE "h264|avdec"
 ```
 
-**"APOD Wallpaper is damaged and can't be opened."** The quarantine flag on an unsigned macOS download. See [Installing](#installing).
+**"Apple could not verify "APOD Wallpaper" is free of malware", with only *Move to Trash* and *Done*.** Gatekeeper refusing a download that is not notarized. Choose *Done*, then use *Open Anyway* in *System Settings > Privacy & Security* or clear the quarantine flag; see [Installing](#installing).
+
+**"APOD Wallpaper is damaged and can't be opened."** The same quarantine flag, reported this way when macOS finds no signature it can assess. *Open Anyway* is not offered for it, so clear the flag with the `xattr` command in [Installing](#installing).
+
+In both cases `spctl -a -vv "/Applications/APOD Wallpaper.app"` answers `rejected`, before and after the fix. That is expected for an app that is not notarized, and it does not stop the app from running once it has been allowed.
 
 **Started at login and nothing appeared.** That is the intended behaviour, there is no window at login, by design. Check it is actually running:
 
