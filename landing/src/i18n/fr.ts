@@ -143,10 +143,7 @@ export const fr: Copy = {
   download: {
     eyebrow: "Télécharger",
     heading: "Installez-la une fois. Remarquez-la chaque matin.",
-    ledeBefore:
-      "Aucun compte, aucun abonnement, aucune télémétrie, rien à configurer. Elle utilise l'API publique de la NASA avec une clé de démonstration partagée, et vous pouvez coller une ",
-    ledeLink: "clé gratuite à vous",
-    ledeAfter: " dans le panneau si vous préférez votre propre quota.",
+    lede: "Aucun compte, aucune clé, aucun abonnement, aucune télémétrie, rien à configurer. Elle lit le flux public par lequel la NASA publie l'APOD, celui-là même sur lequel son propre site est construit.",
     platforms: {
       macos: {
         name: "macOS",
@@ -179,7 +176,7 @@ export const fr: Copy = {
     items: [
       {
         q: "Faut-il un compte ou une clé d'API ?",
-        a: "Ni l'un ni l'autre. L'application parle à l'API publique de la NASA avec la clé de démonstration partagée, qui autorise trente requêtes par heure et par adresse, là où l'application en fait une poignée par jour. Si vous partagez votre adresse avec d'autres utilisateurs de cette API, une clé personnelle gratuite se demande en une minute et se colle directement dans le panneau.",
+        a: "Ni l'un ni l'autre. L'application lit le flux public par lequel la NASA publie l'APOD, qui ne demande aucune clé, et n'y fait qu'une poignée de requêtes par jour.",
       },
       {
         q: "Qu'est-ce qu'elle coûte à ma batterie et à ma mémoire ?",
@@ -195,7 +192,7 @@ export const fr: Copy = {
       },
       {
         q: "À qui appartiennent les images ?",
-        a: "Pas à cette application. Les publications portant une mention de copyright appartiennent à leurs auteurs, et cette mention est affichée avec l'image et jamais retirée. Le reste est en général du matériel de la NASA, dans le domaine public aux États-Unis. L'application les télécharge pour votre bureau ; ce que vous en faites ensuite vous regarde.",
+        a: "Pas à cette application. Chaque image est affichée avec son crédit, tel que la NASA le publie, et ce crédit n'est jamais retiré. Beaucoup appartiennent aux photographes qui les ont prises, d'autres sont du matériel de la NASA, dans le domaine public aux États-Unis ; le flux de la NASA ne dit plus lequel est lequel, et l'application ne devine pas. Elle les télécharge pour votre bureau ; ce que vous en faites ensuite vous regarde.",
       },
       {
         q: "Dans quelle langue est l'application elle-même ?",
@@ -211,6 +208,6 @@ export const fr: Copy = {
     licence: "Licence MIT",
     apod: "NASA APOD",
     legal:
-      "Sans affiliation avec la NASA. Astronomy Picture of the Day est un service de la NASA et de la Michigan Technological University. Les images portant une mention de copyright restent la propriété de leurs auteurs ; l'application affiche cette mention et ne la retire jamais. Le code est sous licence MIT et a été écrit avec une forte assistance de l'IA, ce que le dépôt annonce d'emblée.",
+      "Sans affiliation avec la NASA. Astronomy Picture of the Day est un service de la NASA et de la Michigan Technological University. Les images restent la propriété de leurs auteurs ; l'application affiche le crédit de chacune et ne le retire jamais. Le code est sous licence MIT et a été écrit avec une forte assistance de l'IA, ce que le dépôt annonce d'emblée.",
   },
 };

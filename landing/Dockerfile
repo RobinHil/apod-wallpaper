@@ -22,11 +22,6 @@ ARG SITE_ORIGIN=http://localhost:8080
 ENV SITE_BASE=$SITE_BASE
 ENV SITE_ORIGIN=$SITE_ORIGIN
 
-# A NASA key of your own, if you have one. Left empty the page falls back to
-# NASA's DEMO_KEY, and to its own painted sky when that key is exhausted.
-ARG VITE_NASA_API_KEY=""
-ENV VITE_NASA_API_KEY=$VITE_NASA_API_KEY
-
 # Builds the client bundle, the server bundle, and then the two prerendered
 # pages: / in English and /fr/ in French.
 RUN pnpm build

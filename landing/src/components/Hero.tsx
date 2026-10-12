@@ -1,7 +1,7 @@
 import { eyebrow, lede, primary, secondary, shell } from "../classes";
 import { useCopy } from "../i18n";
-import { apodPageUrl, REPO, RELEASES } from "../links";
-import { apodStill, type Apod } from "../useApod";
+import { REPO, RELEASES } from "../links";
+import type { Apod } from "../useApod";
 import { Desktop } from "./Desktop";
 import { PanelMock } from "./PanelMock";
 import { Reveal } from "./Reveal";
@@ -10,24 +10,24 @@ import { ArrowRightIcon, DownloadIcon, ExternalLinkIcon } from "./Icons";
 const STAND_IN = {
   title: "The Great Nebula in Orion",
   date: "1995-06-16",
-  credit: "NASA (public domain)",
+  credit: "Credit: NASA",
   explanation:
     "The Great Nebula in Orion, an immense, nearby starbirth region, is probably the most famous of all astronomical nebulas. Here, glowing gas surrounds hot young stars at the edge of an immense interstellar molecular cloud only 1500 light-years away.",
 };
 
 export function Hero({ apod }: { apod: Apod | null }) {
   const copy = useCopy();
-  const still = apod ? apodStill(apod) : null;
+  const still = apod ? apod.still : null;
 
   // The panel is a picture of the application, and the application is in
-  // English: what it shows is whatever the API returned, and the stand-in
-  // used before the API answers is written the way the panel would write it,
+  // English: what it shows is whatever the feed returned, and the stand-in
+  // used before the feed answers is written the way the panel would write it,
   // ISO date included, in both languages.
   const shown = apod
     ? {
         title: apod.title,
         date: apod.date,
-        credit: apod.copyright ? `(c) ${apod.copyright.trim()}` : "NASA (public domain)",
+        credit: apod.credit ? `Credit: ${apod.credit}` : "",
         explanation: apod.explanation,
       }
     : STAND_IN;
@@ -103,7 +103,7 @@ export function Hero({ apod }: { apod: Apod | null }) {
             <div className="mt-[22px] flex justify-end sm:mt-[76px]">
               {apod ? (
                 <a
-                  href={apodPageUrl(apod.date)}
+                  href={apod.page}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex max-w-[60%] items-center gap-[8px] text-[13px] text-text-dim transition hover:text-text"

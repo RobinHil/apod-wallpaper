@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { eyebrow, heading, lede, shell } from "../classes";
 import { useCopy } from "../i18n";
-import { apodStill, type Apod } from "../useApod";
+import type { Apod } from "../useApod";
 import { Desktop } from "./Desktop";
 import { CalendarIcon, ShuffleIcon, SunIcon } from "./Icons";
 import { Reveal } from "./Reveal";
@@ -73,7 +73,7 @@ export function Modes({ apod }: { apod: Apod | null }) {
             </div>
 
             <Desktop
-              still={apod ? apodStill(apod) : null}
+              still={apod ? apod.still : null}
               fit={fit}
               className="order-1 aspect-[16/10] w-full rounded-[14px] border border-hairline lg:order-2"
             />

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { eyebrow, heading, lede, primary, secondary, shell } from "../classes";
 import { selectContents, writeClipboard } from "../clipboard";
 import { useCopy } from "../i18n";
-import { API_KEY_SIGNUP, README, RELEASES, REPO } from "../links";
+import { README, RELEASES, REPO } from "../links";
 import {
   AppleIcon,
   CheckIcon,
@@ -101,18 +101,7 @@ export function Download() {
         <Reveal>
           <p className={eyebrow}>{copy.download.eyebrow}</p>
           <h2 className={`${heading} mt-[16px] max-w-[20ch]`}>{copy.download.heading}</h2>
-          <p className={`${lede} mt-[20px]`}>
-            {copy.download.ledeBefore}
-            <a
-              className="text-text underline decoration-border underline-offset-[4px] transition hover:decoration-accent"
-              href={API_KEY_SIGNUP}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {copy.download.ledeLink}
-            </a>
-            {copy.download.ledeAfter}
-          </p>
+          <p className={`${lede} mt-[20px]`}>{copy.download.lede}</p>
         </Reveal>
 
         <div className="mt-[48px] grid gap-[18px] md:grid-cols-2">

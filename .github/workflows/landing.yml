@@ -76,9 +76,6 @@ jobs:
         env:
           SITE_ORIGIN: ${{ steps.pages.outputs.origin }}
           SITE_BASE: ${{ steps.pages.outputs.base_path }}
-          # Optional. Unset, the page uses NASA's DEMO_KEY and falls back to
-          # its own painted sky when that shared key is exhausted.
-          VITE_NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
         run: pnpm build
 
       # What the build is expected to have produced, asserted rather than

@@ -139,10 +139,7 @@ export const en = {
   download: {
     eyebrow: "Download",
     heading: "Install it once. Notice it every morning.",
-    ledeBefore:
-      "No account, no subscription, no telemetry, nothing to configure. It uses NASA's public API with a shared demo key out of the box, and you can paste a ",
-    ledeLink: "free key of your own",
-    ledeAfter: " into the panel if you would rather have your own quota.",
+    lede: "No account, no key, no subscription, no telemetry, nothing to configure. It reads the public feed NASA publishes APOD through, the same one its own site is built from.",
     platforms: {
       macos: {
         name: "macOS",
@@ -175,7 +172,7 @@ export const en = {
     items: [
       {
         q: "Does it need an account or an API key?",
-        a: "Neither. It talks to NASA's public API with the shared demo key, which allows thirty requests an hour per address, and the app makes a handful a day. If you share an address with other users of that API, a free personal key takes a minute to request and is pasted straight into the panel.",
+        a: "Neither. It reads the public feed NASA publishes APOD through, which asks for no key, and it makes a handful of requests a day.",
       },
       {
         q: "What does it do to my battery and my memory?",
@@ -191,7 +188,7 @@ export const en = {
       },
       {
         q: "Who owns the pictures?",
-        a: "Not this app. Entries carrying a copyright notice belong to their authors, and that notice is shown with the image and never stripped. The rest is usually NASA material, public domain in the United States. The app downloads them for your own desktop; what you do with them afterwards is yours to answer for.",
+        a: "Not this app. Each picture is shown with its credit, as NASA publishes it, and the credit is never stripped. Many belong to the photographers who took them, others are NASA material, public domain in the United States; NASA's feed no longer says which is which, so the app does not guess. It downloads them for your own desktop; what you do with them afterwards is yours to answer for.",
       },
       {
         q: "What language is the app itself in?",
@@ -207,7 +204,7 @@ export const en = {
     licence: "MIT licence",
     apod: "NASA APOD",
     legal:
-      "Not affiliated with NASA. Astronomy Picture of the Day is a service of NASA and Michigan Technological University. Images carrying a copyright notice remain the property of their authors; the application shows that notice and never removes it. The code is MIT licensed and was written with heavy AI assistance, which the repository states up front.",
+      "Not affiliated with NASA. Astronomy Picture of the Day is a service of NASA and Michigan Technological University. Images remain the property of their authors; the application shows the credit of each one and never removes it. The code is MIT licensed and was written with heavy AI assistance, which the repository states up front.",
   },
 };
 
