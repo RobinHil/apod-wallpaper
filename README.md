@@ -29,7 +29,6 @@ The project has a page of its own at [robinhil.github.io/apod-wallpaper](https:/
 - [Installing](#installing)
 - [Starting at login](#starting-at-login)
 - [Uninstalling](#uninstalling)
-- [NASA API key](#nasa-api-key)
 - [Project layout](#project-layout)
 - [Design notes](#design-notes)
 - [Troubleshooting](#troubleshooting)
@@ -44,11 +43,13 @@ The project has a page of its own at [robinhil.github.io/apod-wallpaper](https:/
 
 Three modes, selected in the settings panel:
 
-- **Picture of the day**: the image the APOD API reports as the most recently published one. No date is sent with the request, so the API decides what "today" is and the local time zone cannot skew the result.
+- **Picture of the day**: the entry NASA's APOD feed lists as the most recently published one. No date is sent with the request, so the feed decides what "today" is and the local time zone cannot skew the result.
 - **Random**: a date drawn at random from the whole archive, which starts on 16 June 1995. Clicking "Random" again draws another one immediately.
 - **Specific date**: the APOD published on a date you pick, between 16 June 1995 and today. A few days in the archive have no publication; those are reported and the current wallpaper is kept.
 
-Some APOD entries are videos, and a still is used for those. YouTube and Vimeo entries use the thumbnail the API publishes, the maximum-resolution one when YouTube has it. Entries published as a plain video file have no thumbnail, so a frame is decoded out of the file itself. The panel says which of the two is on the desktop and offers a link to watch the video.
+Some APOD entries are videos, and a still is used for those: one NASA published alongside the video when there is one, otherwise the YouTube or Vimeo thumbnail, the maximum-resolution one when YouTube has it, and for a video published as a plain file, a frame decoded out of the file itself. The panel says which kind of still is on the desktop and offers a link to watch the video.
+
+Each picture is shown with its credit. NASA's feed no longer says whether that credit is a copyright notice or a public-domain one, so the app never calls anything public domain; see [Licence](#licence).
 
 ### When the wallpaper changes
 
@@ -58,9 +59,9 @@ Three things end that sleep early:
 
 - **A screen change** : a new resolution, a scale change, a display plugged in or unplugged. The wallpaper is recomposed for the new size from the original already on disk, without touching the network.
 - **Waking from sleep** : the pending wait was measured against a clock that stops while the machine is suspended, so the task is told about the wake-up and re-reads the wall clock.
-- **A failure** : no network, an exhausted API quota, an API outage. The app retries with an exponential backoff (10 s, 20 s, 40 s, ...) with ±20 % jitter, capped at 15 minutes, until it succeeds. The wallpaper in place is never disturbed by a failure.
+- **A failure** : no network, a server turning requests away, an outage. The app retries with an exponential backoff (10 s, 20 s, 40 s, ...) with ±20 % jitter, capped at 15 minutes, until it succeeds. The wallpaper in place is never disturbed by a failure.
 
-When today's picture has not been published yet, the most recent one is applied and the app looks again every 30 minutes rather than hammering the API.
+When today's picture has not been published yet, the most recent one is applied and the app looks again every 30 minutes rather than hammering the feed.
 
 "Refresh now", in the panel, applies an image immediately, including re-applying the current one, which is what restores it if you have set another desktop picture by hand since.
 
@@ -75,7 +76,7 @@ No text is ever burned into the image. The date and the copyright are shown in t
 
 ### The panel and the tray
 
-Everything is in the **settings panel**: the current image and its credits, the three modes, the fit mode, the manual refresh, the NASA API key, and the quit button. Closing it leaves the app running in the background.
+Everything is in the **settings panel**: the current image and its credits, the three modes, the fit mode, the manual refresh and the quit button. Closing it leaves the app running in the background.
 
 The **tray item** -- the menu bar on macOS, the top bar on GNOME -- shows the current image's title, date and copyright, and opens the panel or quits. Everything it offers exists in the panel as well, which matters more on GNOME than on macOS: see below.
 
@@ -119,7 +120,7 @@ Everything lives in one directory, wherever the platform puts application data:
 | Linux | `~/.local/share/com.rh.apod-wallpaper/` |
 
 ```
-settings.json                            API key, mode, chosen date, fit mode
+settings.json                            mode, chosen date, fit mode
 state.json                               the wallpaper currently applied
 current/<date>.<ext>                     the downloaded original
 current/wall-<date>-<fit>-<w>x<h>.jpg    the composition set as the wallpaper
@@ -348,17 +349,6 @@ An AppImage is a single file, so deleting it is the whole uninstall; the data di
 
 ---
 
-## NASA API key
-
-By default the app uses `DEMO_KEY`, which NASA limits to **30 requests per hour and 50 per day, per IP address**. The app makes at most a handful of requests a day, so that is usually plenty; a personal key is worth having if you share an IP address with other users of the API.
-
-1. Request one at <https://api.nasa.gov/>, a short form, the key arrives by email.
-2. Open the panel, paste it into the "NASA API key" field, click "Save".
-
-Saving a key immediately retries the update, which is normally why you are typing one in. The key is stored in `settings.json` and is only ever sent to the NASA API; error messages have the request URL stripped out of them so it cannot leak into the panel.
-
----
-
 ## Project layout
 
 Four files carry everything that is not portable, marked below. Each holds both implementations, because reading them side by side is how you tell that the two desktops are being asked to do the same thing.
@@ -369,15 +359,16 @@ apod-wallpaper/
 |  |- src/
 |  |  |- main.rs                 # Binary entry point
 |  |  |- lib.rs                  # Wiring: shared state, the UiState contract, startup
-|  |  |- commands.rs             # The seven commands the panel invokes
+|  |  |- commands.rs             # The six commands the panel invokes
 |  |  |- panel.rs                # The settings window, built on demand
 |  |  |- tray.rs                 # The tray item and its two live labels
 |  |  |- scheduler.rs            # The only background task: when to update
 |  |  |- updater.rs              # What an update does, end to end
-|  |  |- nasa_api.rs             # APOD API calls, parsing, error taxonomy
+|  |  |- nasa_api.rs             # The APOD feed: requests, sources to try, error taxonomy
+|  |  |- apod_html.rs            # Reading the feed's HTML: plain text, and the published media
 |  |  |- store.rs                # state.json + the two image files, atomic writes
 |  |  |- image_compose.rs        # Ratio handling: blurred fill or crop
-|  |  |- settings.rs             # API key, mode, fit; JSON persistence
+|  |  |- settings.rs             # Mode, chosen date, fit; JSON persistence
 |  |  |- memory.rs               # Returning an update's working set to the OS
 |  |  |
 |  |  |- wallpaper.rs            # [per-platform] Setting the desktop picture
@@ -421,7 +412,7 @@ The application is meant to be invisible in Activity Monitor. There is exactly o
 2. On success, sleep until the next local day change.
 3. On failure, or when today's APOD is not published yet, retry on a backoff until it succeeds, then go back to step 2.
 
-Nothing else is armed: no polling of the API, no periodic reapplication, no timer that exists only to ask whether anything has happened. When the wallpaper is up to date the process is sleeping on a single timer, for the nine or so hours to the next midnight, not in instalments.
+Nothing else is armed: no polling of the feed, no periodic reapplication, no timer that exists only to ask whether anything has happened. When the wallpaper is up to date the process is sleeping on a single timer, for the nine or so hours to the next midnight, not in instalments.
 
 A sleep that long has to survive the machine being suspended, and the timer counts against a clock that stops while it is. So the desktop is asked to say when it happened, and the task is woken, re-reads the wall clock and decides again -- which costs one observer and no polling. Screen changes arrive the same way, as a notification rather than as something looked for.
 
@@ -438,7 +429,7 @@ The same reasoning applies to retries. Subscribing to `NWPathMonitor`, or to Net
 
 ### Nothing is redone that does not need to be
 
-`state.json` records the applied image and the inputs its composition depended on, fit mode and screen size. At startup, if that record already answers the current settings and both files are on disk, the app does nothing at all: no API call, no download, no wallpaper-set call. Restarting five times in a day costs five `state.json` reads.
+`state.json` records the applied image and the inputs its composition depended on, fit mode and screen size. At startup, if that record already answers the current settings and both files are on disk, the app does nothing at all: no request, no download, no wallpaper-set call. Restarting five times in a day costs five `state.json` reads.
 
 Changing the fit mode, or moving to a display with a different resolution, recomposes from the stored original without touching the network.
 
@@ -485,15 +476,30 @@ Clicking the tray item is the direct one. Launching the application again is the
 
 The one automatic opening left is the very first launch, decided by the absence of `settings.json`. On a machine that has never run the app there is no tray icon the user has learnt to look for and no wallpaper to notice, so a completely silent first start would be indistinguishable from one that failed. On GNOME, where the tray icon may never exist at all, that first panel is also where the user learns the application is running.
 
+### Where the pictures come from
+
+APOD moved from apod.nasa.gov to science.nasa.gov on 29 September 2026, and the old site now redirects every address, pages and image files alike, to the new home page. The `api.nasa.gov` endpoint every APOD client used to call kept scraping the old site after the move: since then it answers HTTP 500 when asked for video thumbnails, and otherwise the NASA logo, titled "NASA Science", for whatever date it is asked. It is reported to be archived on 1 December 2026.
+
+The app reads the feed the new site is built from instead, `science.nasa.gov/wp-json/wp/v2/apod-basic`. It needs no key. The latest entry comes from the list, `?per_page=1`, which is sorted newest first; one date comes from `/AAMMJJ`, which answers 404 for the nine days the archive has no entry. Two things about it shaped the code:
+
+- **It ignores what it does not understand.** Asked for `?date=2026-08-19` it returns the latest entries with a 200, exactly the failure that turned the old endpoint into a logo for every day. So an entry that comes back for another date than the one requested is an error, never a picture to apply.
+- **Its own fields are not the source of truth.** `hdurl` is a generic placeholder for about one entry in seven (most videos, every GIF of the early archive, all of them under one folder the app recognises), `url` is the article page, and there is no field for a video at all. Each entry also carries `basic_html`, the entry rendered the way the old APOD page was, and that page says what was published: the image and the link around it, a `<video>` file, or an `<iframe>` for YouTube and Vimeo. `apod_html` reads it, with a small scanner rather than an HTML parser, the shapes being few and fixed.
+
+Every image lives on `assets.science.nasa.gov`, which serves each file twice: as stored, under `content/dam/`, and through a resizing service under `dynamicimage/assets/`, which is where the feed's own URLs point. The service recompresses hard, 70 kB for the 1.4 MB original of 2026-10-12, renders nothing larger than 4096 pixels (asked for more it falls back to 1280, which is what the published URL of a large original gets), and enlarges whatever is smaller than the size asked for. So the stored original is downloaded first, unless `hdurl` declares it larger than 40 megapixels: 88 entries are, up to 712 megapixels and 120 MB for a single PNG, and for those the service's largest rendition is plenty for any screen. The published URLs stay behind as fallbacks.
+
+The text fields arrive as HTML too, with entities, links and labels in them, and are reduced to plain text before they reach the panel. The credit is one of them, and it is the one thing the move lost for good: the feed's `copyright` field is the credit line for every entry, NASA's own included, so whether a picture is in the public domain can no longer be told from it.
+
 ### Video APODs
 
-A video is not a wallpaper, so a still is taken from it. Which still depends on how the video was published, and APOD does it two ways.
+A video is not a wallpaper, so a still is taken from it. Across the archive, 339 video entries are YouTube embeds, 47 Vimeo embeds, 45 files of their own, and 19 something no still can come from: Flash players and interactive pages that disappeared with the old site, or another site's viewer.
 
-Most video entries are **YouTube or Vimeo embeds**. The API has thumbnails for those, and asked for them (`thumbs=true`) it returns one. YouTube stores that one picture at several sizes and does not generate the big ones for every video, so they are tried biggest first, `maxresdefault` (1280x720), then `sddefault` (640x480), with the thumbnail as published as the last resort. It is the same picture at each step; starting from more pixels only means less upscaling on the way to a screen-sized wallpaper.
+NASA now publishes a still of its own for some recent videos, in `hdurl`. It is the picture the editors chose, so it comes first whenever there is one.
+
+For a **YouTube** embed the thumbnail is built from the video id. YouTube stores that one picture at several sizes and does not generate the big ones for every video, so they are tried biggest first, `maxresdefault` (1280x720), then `sddefault` (640x480), then `hqdefault` (480x360), which always exists. It is the same picture at each step; starting from more pixels only means less upscaling on the way to a screen-sized wallpaper. For a **Vimeo** embed it comes from Vimeo's oEmbed endpoint, a second metadata request made for those entries only.
 
 A thumbnail is what the uploader chose, which is not always a frame of the video: it is sometimes a cover with a title burned into it, and that is what lands on the desktop. Nothing here can tell the two apart, and it is left that way, video APODs are a handful of days a year, and telling a cover from a frame would take OCR.
 
-The rest are served as a **plain file** on apod.nasa.gov, an `.mp4`. The API has no thumbnail for those and returns an empty string in its place, so the file is downloaded and a frame is decoded out of it. The decoder is whichever one the desktop already has: AVFoundation on macOS, GStreamer on GNOME. Both are linked the same way the wallpaper machinery already links AppKit and GLib, so neither adds anything for anyone to install, and on both the formats that work are the ones the system can play.
+The rest are served as a **plain file** on assets.science.nasa.gov, mostly `.mp4`, a few `.mov` and `.mpg`; the archive's two `.wmv` and one `.asx` are not tried at all. With no still of NASA's, the file is downloaded and a frame is decoded out of it. The decoder is whichever one the desktop already has: AVFoundation on macOS, GStreamer on GNOME. Both are linked the same way the wallpaper machinery already links AppKit and GLib, so neither adds anything for anyone to install, and on both the formats that work are the ones the system can play.
 
 That last clause is a real limitation and not a disclaimer. Fedora ships no H.264 decoder, for patent reasons, so a video APOD published as H.264 yields no frame there until `gstreamer1-libav` is installed from RPM Fusion. The application treats that exactly as it treats a video macOS cannot open: it says so and keeps the wallpaper already in place.
 
@@ -501,17 +507,17 @@ The frame is not the first one, videos open on black, on a fade-in, or on a titl
 
 Videos shot in portrait carry their rotation as metadata rather than in the pixels, so it has to be applied or the frame lands on its side. macOS has `setAppliesPreferredTrackTransform`; GNOME gets the same result from `videoflip method=automatic`, which reads the orientation tag.
 
-Either way the panel flags the entry and links to the video, to YouTube or Vimeo for an embed, to the APOD page for a file, which is where a raw `.mp4` is meant to be watched, and the tray appends "(video)" to the title. When nothing at all can be made of an entry, the current wallpaper is kept in daily mode, and another date is drawn in random mode.
+Either way the panel flags the entry and links to the video, to YouTube or Vimeo for an embed, to the APOD article for anything else, which is where a raw `.mp4` is meant to be watched, and the tray appends "(video)" to the title. When nothing at all can be made of an entry, the current wallpaper is kept in daily mode, and another date is drawn in random mode.
 
 ### Daily mode sends no date
 
-The app asks the API for "the most recently published image" rather than for the local date, which removes the time-zone skew (APOD is published on US Eastern time). Just after local midnight the API still serves yesterday's picture; that counts as *not yet satisfied*, so the app applies it if it is new and keeps looking until today's appears. Pinning the request to the local date would skip today's picture entirely on some days.
+The app asks the feed for "the most recently published image" rather than for the local date, which removes the time-zone skew (APOD is published at 00:05 US Eastern time). Just after local midnight the feed still serves yesterday's picture; that counts as *not yet satisfied*, so the app applies it if it is new and keeps looking until today's appears. Pinning the request to the local date would skip today's picture entirely on some days.
 
 ### The panel holds no state of its own
 
 The backend is the single source of truth. Every panel command returns a whole `UiState`, and the backend pushes one on `state-updated` whenever it changes something by itself, the daily update, a screen change, a wake from sleep. The panel renders what it is given and never computes a setting locally, so the two can never disagree about what is applied.
 
-Two exceptions, both deliberate and both local to a component: the date picker stays visible from the moment "Specific date" is clicked, before any mode has actually changed, and the two text fields hold what is being typed. Those fields are re-seeded from every push, except while they have the focus -- otherwise a background update landing mid-sentence would wipe out a half-entered API key.
+Two exceptions, both deliberate and both local to a component: the date picker stays visible from the moment "Specific date" is clicked, before any mode has actually changed, and the date field holds what is being typed. That field is re-seeded from every push, except while it has the focus -- otherwise a background update landing mid-entry would wipe out a half-typed date.
 
 While a command is in flight the whole UI is covered by an overlay and pushed updates are ignored, so nothing moves under the pointer between the click and the result.
 
@@ -547,7 +553,7 @@ Arch is the exception, and it is a deliberate one. Tauri has no bundler for it, 
 - **Memory is given back after an update**: an update is the only moment anything large is allocated, a full-resolution APOD decoded in memory plus two screen-sized buffers, and the process then sleeps for twelve hours. Freed is not returned, so `memory::release_to_os` asks the allocator once, at the point where everything large has certainly been dropped. Measured on GNOME with a 2.2-megapixel original: 13.1 MB of private memory on a start with nothing to do, 25.7 MB after one update without it. glibc only; musl and macOS have no equivalent worth binding by hand.
 - **Opening the panel is what costs memory, not keeping it open**: 28.6 MB for a process that has never opened it, 154 MB once it has been opened and closed, because WebKitGTK keeps its share for the life of the process. Nothing in the application requires the panel, so a user who never opens it pays none of that.
 - **Errors are never silent**: panel commands wait for the Rust side to finish and return any error to the frontend, which blocks the UI meanwhile and shows the message in a banner. The background task records its failures in the status line the panel displays.
-- **Copyright**: the API's `copyright` field is preserved and shown in the panel and the tray. When it is present the image is **not** public domain: it belongs to its author, and using it is limited to a personal wallpaper. Images without one are NASA's and are public domain.
+- **Credit**: the credit line NASA publishes with each entry is shown in the panel and the tray, labelled as a credit. Since APOD moved, the feed gives the same line for a photographer's copyrighted picture as for NASA's own, so the app no longer tells them apart and never calls an image public domain.
 
 ---
 
@@ -624,7 +630,7 @@ No GPL-licensed component is linked in on either platform. Video stills are deco
 
 The images are a separate matter, and they are not mine to license:
 
-- APOD entries **carrying a copyright notice** remain the property of their authors. The app displays that notice with the image, in the panel and in the menu bar, and never strips it.
-- Entries **without** such a notice are usually NASA material, which is in the public domain in the United States. NASA's media guidelines still ask that its imagery not be used in a way that implies endorsement.
+- APOD pictures **credited to their authors** remain their property. The app displays the credit with the image, in the panel and in the menu bar, and never strips it. NASA's feed no longer says which credits are copyright notices, so treat every picture as copyrighted unless the APOD page says otherwise.
+- Pictures that are **NASA material** are in the public domain in the United States. NASA's media guidelines still ask that its imagery not be used in a way that implies endorsement.
 
 The application downloads these images for your own desktop. Redistributing them is your responsibility, not the application's.

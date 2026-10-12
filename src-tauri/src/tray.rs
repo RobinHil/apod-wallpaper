@@ -94,9 +94,9 @@ pub fn update_labels(app: &AppHandle, ui: &UiState) {
     let info = ui
         .current
         .as_ref()
-        .map(|c| match &c.copyright {
-            Some(cr) => format!("{} -- (c) {}", c.date, truncate(cr, 45)),
-            None => format!("{} -- NASA (public domain)", c.date),
+        .map(|c| match &c.credit {
+            Some(credit) => format!("{} -- Credit: {}", c.date, truncate(credit, 45)),
+            None => c.date.clone(),
         })
         .unwrap_or_else(|| "-".to_string());
 

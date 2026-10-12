@@ -87,7 +87,7 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
         .unwrap_or(ASSUMED_SCREEN);
 
     if let Some(a) = &applied {
-        let present = { state.lock().await.store.files_present(a) };
+        let present = { state.lock().await.store.files_present(a) } && !logo_of_the_old_api(a);
         match what_is_due(&settings, a, present, &today, width, height, force) {
             // The image on disk already answers the current settings.
             Due::Nothing => {
@@ -106,9 +106,8 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
     }
 
     let client = http_client()?;
-    let api_key = settings.effective_api_key().to_string();
     let mut target = match settings.mode {
-        // Daily mode sends no date: the API returns the most recently
+        // Daily mode sends no date: the feed returns the most recently
         // published image, which sidesteps time-zone skew.
         Mode::Daily => None,
         Mode::Random => Some(pick_random_date()),
@@ -117,14 +116,15 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
 
     let mut found: Option<Apod> = None;
     for _ in 0..MAX_RANDOM_ATTEMPTS {
-        match nasa_api::fetch_apod(&client, &api_key, target).await {
+        match nasa_api::fetch_apod(&client, target).await {
             Ok(apod) if apod.has_wallpaper() => {
                 found = Some(apod);
                 break;
             }
-            // A real publication nothing can be made of. Rare now that a
-            // video file yields a frame: it takes a media type with no URL at
-            // all. Random mode simply draws again.
+            // A real publication nothing can be made of: a Flash player or
+            // another site's viewer, a page migrated empty, a video in a
+            // container no system decoder reads. Random mode simply draws
+            // again.
             Ok(apod) => {
                 if settings.mode == Mode::Random {
                     target = Some(pick_random_date());
@@ -134,7 +134,7 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
                 // changes, so without it the day reads as a silent failure.
                 let message = if apod.is_video() {
                     format!(
-                        "The APOD for {} is a video with no thumbnail -- current wallpaper kept.",
+                        "The APOD for {} is a video with no still image -- current wallpaper kept.",
                         apod.date
                     )
                 } else {
@@ -169,7 +169,7 @@ async fn run(app: &AppHandle, state: &State, force: bool) -> Result<Outcome, Str
     // The API returned the image already applied. Typical in daily mode just
     // after the local day change, before the new APOD is published.
     if let Some(a) = &applied {
-        let usable = { state.lock().await.store.files_present(a) };
+        let usable = { state.lock().await.store.files_present(a) } && !logo_of_the_old_api(a);
         if usable && a.date == apod.date {
             let mut record = a.clone();
             if record.fit != settings.fit_mode || record.width != width || record.height != height {
@@ -294,6 +294,17 @@ fn what_is_due(
     } else {
         Due::Recompose
     }
+}
+
+/// After APOD moved, the api.nasa.gov endpoint answered every date with the
+/// NASA logo, under the date it was asked for. Mostly as an HTTP 500, because
+/// this app asks for video thumbnails, but a version that ever received it as
+/// a 200 recorded the logo as that day's picture -- and nothing would replace
+/// it before the next day, or ever in specific-date mode, since the record
+/// looks complete. Such a record is treated as having no files at all.
+fn logo_of_the_old_api(a: &Applied) -> bool {
+    a.source_url
+        .starts_with("https://science.nasa.gov/wp-content/themes/nasa-child/assets/images/")
 }
 
 /// Is the applied image the one the current settings ask for right now?
@@ -448,13 +459,10 @@ async fn install(
         date: apod.date.clone(),
         title: apod.title.clone(),
         explanation: apod.explanation.clone(),
-        copyright: apod.copyright.clone(),
-        media_type: apod.media_type.clone(),
-        video_url: if apod.is_video() {
-            apod.url.clone()
-        } else {
-            None
-        },
+        credit: apod.credit.clone(),
+        page_url: apod.page_url.clone(),
+        media_type: apod.kind().to_string(),
+        video_url: apod.video_url(),
         source_url,
         image_file,
         wallpaper_file,
@@ -544,6 +552,7 @@ fn image_extension(bytes: &[u8]) -> &'static str {
         Ok(image::ImageFormat::Png) => "png",
         Ok(image::ImageFormat::Gif) => "gif",
         Ok(image::ImageFormat::WebP) => "webp",
+        Ok(image::ImageFormat::Tiff) => "tif",
         _ => "jpg",
     }
 }
@@ -663,11 +672,11 @@ mod tests {
     #[test]
     fn the_staged_video_keeps_the_containers_extension() {
         assert_eq!(
-            file_extension("https://apod.nasa.gov/apod/image/2608/a.mp4"),
+            file_extension("https://assets.science.nasa.gov/content/dam/a.mp4"),
             "mp4"
         );
         assert_eq!(
-            file_extension("https://apod.nasa.gov/apod/image/2608/A.MOV"),
+            file_extension("https://assets.science.nasa.gov/content/dam/A.MOV"),
             "mov"
         );
         assert_eq!(file_extension("https://example.com/a.m4v?v=2#t=10"), "m4v");
@@ -681,7 +690,8 @@ mod tests {
             date: date.to_string(),
             title: "t".into(),
             explanation: "e".into(),
-            copyright: None,
+            credit: None,
+            page_url: None,
             media_type: "image".into(),
             video_url: None,
             source_url: "u".into(),
@@ -848,6 +858,21 @@ mod tests {
             &record("2001-02-04", "2026-07-28"),
             "2026-07-28"
         ));
+    }
+
+    #[test]
+    fn the_logo_the_old_api_served_is_never_kept() {
+        let mut a = record("2026-10-12", "2026-10-12");
+        a.source_url =
+            "https://science.nasa.gov/wp-content/themes/nasa-child/assets/images/nasa-logo@2x.png"
+                .into();
+        assert!(logo_of_the_old_api(&a));
+
+        a.source_url = "https://assets.science.nasa.gov/content/dam/science/cds/apod/apod/2026/october/JupiterMoons_Upreti_3105.jpg".into();
+        assert!(!logo_of_the_old_api(&a));
+        // A record from before the move holds a real picture.
+        a.source_url = "https://apod.nasa.gov/apod/image/2609/M31Before_Scherer_4290.jpg".into();
+        assert!(!logo_of_the_old_api(&a));
     }
 
     #[test]

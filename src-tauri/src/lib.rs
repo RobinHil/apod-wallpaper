@@ -1,3 +1,4 @@
+mod apod_html;
 mod commands;
 mod image_compose;
 mod memory;
@@ -40,7 +41,6 @@ pub struct UpdateLock(Mutex<()>);
 pub struct UiState {
     pub mode: Mode,
     pub fit_mode: FitMode,
-    pub api_key: String,
     pub specific_date: String,
     pub offline: bool,
     pub status_message: Option<String>,
@@ -52,7 +52,6 @@ pub(crate) fn ui_state(d: &AppData) -> UiState {
     UiState {
         mode: d.settings.mode,
         fit_mode: d.settings.fit_mode,
-        api_key: d.settings.api_key.clone(),
         specific_date: d.settings.specific_date.clone(),
         offline: d.offline,
         status_message: d.status_message.clone(),
@@ -130,7 +129,6 @@ pub fn run() {
             commands::get_state,
             commands::set_mode,
             commands::set_specific_date,
-            commands::set_api_key,
             commands::set_fit_mode,
             commands::refresh_now,
             commands::quit_app
@@ -289,7 +287,8 @@ mod tests {
             date: "2026-07-28".into(),
             title: "t".into(),
             explanation: "e".into(),
-            copyright: None,
+            credit: None,
+            page_url: None,
             media_type: "image".into(),
             video_url: None,
             source_url: "u".into(),
@@ -303,7 +302,6 @@ mod tests {
         let state = UiState {
             mode: Mode::Daily,
             fit_mode: FitMode::BlurFill,
-            api_key: String::new(),
             specific_date: String::new(),
             offline: false,
             status_message: None,

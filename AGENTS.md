@@ -77,7 +77,7 @@ Dependencies follow the same split: `[target.'cfg(target_os = "macos")'.dependen
 
 ### The backend owns everything
 
-`src-tauri/src/lib.rs` is the wiring: it holds `AppData` behind a `tokio::sync::Mutex`, defines `UiState` (the whole contract with the panel), and starts everything. The three things it used to do inline live next door: `commands.rs` has the seven `#[tauri::command]`s, `panel.rs` the settings window, `tray.rs` the tray item and its two live labels.
+`src-tauri/src/lib.rs` is the wiring: it holds `AppData` behind a `tokio::sync::Mutex`, defines `UiState` (the whole contract with the panel), and starts everything. The three things it used to do inline live next door: `commands.rs` has the six `#[tauri::command]`s, `panel.rs` the settings window, `tray.rs` the tray item and its two live labels.
 
 Every command returns a complete `UiState`, and `refresh_ui` pushes one on the `state-updated` event whenever the backend changes something by itself. The panel renders what it is given and derives no application state of its own, so the two can never disagree.
 
@@ -93,13 +93,15 @@ The frontend is entirely platform-agnostic and contains no macOS or GNOME wordin
 
 How much of an update is actually needed is decided by `what_is_due`, a pure function returning `Due::{Nothing, Recompose, Fetch}`. It is pure on purpose: it crosses the mode, the publication date, whether the files survived, the fit mode, the screen size and `force`, it is the most intricate reasoning in the application, and inside `run` it needed an `AppHandle` and so could not be tested at all. Change the rules there and add a case to its tests; do not scatter the conditions back into `run`.
 
-1. `Due::Nothing`: return immediately, no API call, no wallpaper-set call.
+1. `Due::Nothing`: return immediately, no request, no wallpaper-set call.
 2. `Due::Recompose`: `reapply` recomposes from the stored original, no network.
 3. `Due::Fetch`: `nasa_api::fetch_apod`, then walk `Apod::sources()` (best first, each entry a fallback for the ones before it), download and decode in memory, then `install`: store the original, compose, atomic-rename into place, hand it to the desktop, and only then `store.commit`.
 
+The data comes from `science.nasa.gov/wp-json/wp/v2/apod-basic`, the feed APOD's own site has been built from since it left apod.nasa.gov on 29 September 2026. The old `api.nasa.gov` endpoint answers every date with the NASA logo since then; nothing may call it again. The README's "Where the pictures come from" note has the measurements behind each rule below, taken over the whole archive. In short: the feed silently ignores parameters it does not know, so `check_date` refuses an entry for another date than the one asked for; `hdurl` is a placeholder for one entry in seven, so what was published is read from `basic_html` by `apod_html::media`; every image is first tried as stored under `content/dam/`, since the URLs the feed publishes go through a resizing service that recompresses and caps at 4096 pixels; and the text fields are HTML, reduced by `apod_html::to_text`.
+
 A failure never touches the desktop. The previous image stays on disk and on screen until the new one has actually been applied; `state.json` and `settings.json` go through `store::write_atomic` (temp file, fsync, rename, fsync the directory).
 
-`Outcome::AwaitingPublication` is not a failure: daily mode sends no date, so just after local midnight the API still serves yesterday's picture, which is applied while the scheduler looks again every 30 minutes.
+`Outcome::AwaitingPublication` is not a failure: daily mode sends no date, so just after local midnight the feed still serves yesterday's picture, which is applied while the scheduler looks again every 30 minutes.
 
 ### Scheduling
 
@@ -131,17 +133,19 @@ On GNOME the size comes from Mutter rather than from Tauri on purpose: under Way
 
 All decoding goes through `image_compose::decode` / `decode_bytes`, which sniff the format from the bytes rather than trusting the server's file name. Decoding happens before anything is written to disk, which is what lets the caller fall back to the next source URL.
 
-Video APODs become a still: YouTube and Vimeo embeds use the published thumbnail (tried `maxresdefault`, then `sddefault`, then as published), while entries served as a plain `.mp4` have no thumbnail and get a frame decoded from the file, probing four instants and keeping the first with enough contrast. What is archived is that frame as a JPEG, not the video.
+Video APODs become a still: a still NASA published in `hdurl` first, when there is one; then for a YouTube embed the thumbnail built from the video id (`maxresdefault`, `sddefault`, `hqdefault`), for a Vimeo embed the one its oEmbed endpoint reports, and for a video served as a file a frame decoded from it, probing four instants and keeping the first with enough contrast. What is archived is that frame as a JPEG, not the video. Embeds of anything else (Flash players and pages gone with the old site) yield nothing, which `updater::run` reports like any entry with no usable image.
+
+The panel shows the credit NASA publishes, labelled as a credit, and nothing is ever called public domain: since the move, the feed's `copyright` field is the credit line for every entry, NASA's own included. `Applied` reads the older `copyright` key as `credit`, so a `state.json` written before the move still loads.
 
 Both backends use the system's codecs, so both inherit its gaps: a distribution shipping no H.264 decoder produces no frame. `updater::run` already handles that by keeping the current wallpaper and saying why, so it needs no special case.
 
-`nasa_api::network` strips the URL out of every reqwest error, because the request URL carries the user's API key and every error reaches the panel.
+`nasa_api::network` strips the URL out of every reqwest error: every error reaches the panel, where a full asset URL is noise.
 
 ### The panel
 
 `useAppState` holds all of it: `run` invokes a command, blocks the UI behind an overlay, adopts the returned state, and shows any failure in the banner. Pushed `state-updated` events are ignored while a command is in flight.
 
-Two deliberate exceptions to the backend-owns-everything rule, both local: the date picker's visibility, and the text fields, which use `useSyncedField` and re-seed from pushes only while unfocused, so a background update landing mid-sentence cannot wipe a half-typed API key.
+Two deliberate exceptions to the backend-owns-everything rule, both local: the date picker's visibility, and the date field, which uses `useSyncedField` and re-seeds from pushes only while unfocused, so a background update landing mid-entry cannot wipe a half-typed date.
 
 Styling is Tailwind v4 with the palette as `@theme` tokens in `styles.css`; dark mode redefines the same variables under `prefers-color-scheme`, which is why no component carries a `dark:` variant. Shared utility strings live in `classes.ts` and are never merged: two utilities setting the same property are resolved by stylesheet order, not attribute order, so a variant spells out its own colours instead of layering them over a base.
 
@@ -169,7 +173,7 @@ Building the AppImage on a developer machine needs `patchelf` everywhere and, on
 
 ## Tests
 
-Unit tests live in `#[cfg(test)] mod tests` at the bottom of each Rust module (`nasa_api`, `updater`, `image_compose`, `video_frame`, `settings`, `scheduler`, `lib`). There is no frontend test runner; the gate is `pnpm exec tsc --noEmit` with `strict`, `noUnusedLocals` and `noUnusedParameters`.
+Unit tests live in `#[cfg(test)] mod tests` at the bottom of each Rust module (`nasa_api`, `apod_html`, `updater`, `image_compose`, `video_frame`, `settings`, `store`, `scheduler`, `lib`). There is no frontend test runner; the gate is `pnpm exec tsc --noEmit` with `strict`, `noUnusedLocals` and `noUnusedParameters`.
 
 Several tests assert invariants rather than behaviour, such as `the_sleep_cap_never_splits_a_wait` or the usage text matching the flags actually parsed. Keep them honest when the constants they guard change.
 

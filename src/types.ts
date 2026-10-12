@@ -19,7 +19,12 @@ export interface Applied {
   date: string;
   title: string;
   explanation: string;
-  copyright: string | null;
+  /** The credit line. The feed no longer says whether it is a copyright
+   *  notice, so it is shown as a credit and never as public domain. */
+  credit: string | null;
+  /** The entry's article on science.nasa.gov; null for a record written
+   *  before APOD moved there. */
+  page_url: string | null;
   media_type: string;
   video_url: string | null;
   /** URL the wallpaper was downloaded from: an image, or the video a frame
@@ -30,7 +35,6 @@ export interface Applied {
 export interface UiState {
   mode: Mode;
   fit_mode: FitMode;
-  api_key: string;
   specific_date: string;
   offline: boolean;
   status_message: string | null;

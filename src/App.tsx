@@ -1,5 +1,4 @@
 import { useAppState } from "./useAppState";
-import { ApiKeyCard } from "./components/ApiKeyCard";
 import { CurrentImageCard } from "./components/CurrentImageCard";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { ModeCard } from "./components/ModeCard";
@@ -25,7 +24,6 @@ export function App() {
       <main className="flex flex-1 flex-col gap-[12px] overflow-y-auto p-[12px]">
         <CurrentImageCard current={state?.current ?? null} loading={state === null} />
         <ModeCard state={state} run={run} onError={showError} />
-        <ApiKeyCard state={state} run={run} />
         <PanelFooter state={state} />
       </main>
 

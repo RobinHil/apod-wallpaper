@@ -15,14 +15,20 @@ pub struct Applied {
     pub date: String,
     pub title: String,
     pub explanation: String,
+    /// The credit line, shown as such. Records written before APOD moved call
+    /// it `copyright`, which is what the old API called it.
+    #[serde(default, alias = "copyright")]
+    pub credit: Option<String>,
+    /// The entry's article on science.nasa.gov. Absent from records written
+    /// before APOD moved, whose apod.nasa.gov pages no longer exist.
     #[serde(default)]
-    pub copyright: Option<String>,
-    /// "image" or "video". For a video the stored file is a still: the
-    /// thumbnail the API published, or a frame decoded from the video itself
-    /// when it was served as a plain file and had no thumbnail.
+    pub page_url: Option<String>,
+    /// "image" or "video". For a video the stored file is a still: one NASA
+    /// published, the YouTube or Vimeo thumbnail, or a frame decoded from the
+    /// video itself when it was served as a file.
     pub media_type: String,
     /// The video itself when `media_type` is "video": a YouTube or Vimeo embed
-    /// link, or the URL of the file.
+    /// link, the URL of the file, or whatever else the page embedded.
     #[serde(default)]
     pub video_url: Option<String>,
     /// URL the original was downloaded from.
@@ -184,5 +190,36 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 pub fn sync_dir(dir: &Path) {
     if let Ok(handle) = fs::File::open(dir) {
         let _ = handle.sync_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `state.json` written by 0.2.4, verbatim but for the explanation. An
+    /// upgrade must keep the wallpaper it describes, or the first start after
+    /// it would download the same picture again.
+    #[test]
+    fn a_record_from_before_the_move_still_loads() {
+        let raw = r#"{
+            "date": "2026-09-27",
+            "title": "Andromeda Before Galaxies",
+            "explanation": "...",
+            "copyright": "Kevin Scherer",
+            "media_type": "image",
+            "video_url": null,
+            "source_url": "https://apod.nasa.gov/apod/image/2609/M31Before_Scherer_4290.jpg",
+            "image_file": "2026-09-27.jpg",
+            "wallpaper_file": "wall-2026-09-27-blur-1920x1200.jpg",
+            "fit": "blur_fill",
+            "width": 1920,
+            "height": 1200,
+            "applied_on": "2026-09-27"
+        }"#;
+        let a: Applied = serde_json::from_str(raw).expect("an old record must load");
+        assert_eq!(a.credit.as_deref(), Some("Kevin Scherer"));
+        assert_eq!(a.page_url, None);
+        assert_eq!(a.wallpaper_file, "wall-2026-09-27-blur-1920x1200.jpg");
     }
 }

@@ -1,27 +1,35 @@
 /** External URLs the panel opens in the user's browser. */
 
-/** Official page of an APOD: https://apod.nasa.gov/apod/apYYMMDD.html */
-export function apodPageUrl(date: string): string {
-  const [y, m, d] = date.split("-");
-  return `https://apod.nasa.gov/apod/ap${y.slice(2)}${m}${d}.html`;
+import type { Applied } from "./types";
+
+/**
+ * Where APOD's entries can be browsed. A record written before APOD moved to
+ * science.nasa.gov has no article address, and the apod.nasa.gov page it was
+ * published on now redirects to the home page; this is the nearest thing.
+ */
+const APOD_ARCHIVE = "https://science.nasa.gov/apod/archive/";
+
+/** The entry's article on science.nasa.gov. */
+export function apodPageUrl(current: Applied): string {
+  return current.page_url ?? APOD_ARCHIVE;
 }
 
 /**
  * Where to send someone who wants to watch a video APOD.
  *
- * The API serves embed links, which are converted to the pages a browser can
- * play them on. A video published as a plain file has no page of its own, and
- * handing over the raw `.mp4` would drop the viewer into a bare player with
- * none of the explanation around it -- so those go to the APOD entry, which is
- * where the video is meant to be watched.
+ * The backend reports embed links, which are converted to the pages a browser
+ * can play them on. Anything else -- a video published as a plain file, a
+ * player the old site embedded -- goes to the APOD entry: a raw `.mp4` would
+ * drop the viewer into a bare player with none of the explanation around it,
+ * and the old players are gone with the site.
  */
-export function watchableVideoUrl(url: string, date: string): string {
+export function watchableVideoUrl(current: Applied): string {
+  const url = current.video_url ?? "";
   const youtube = url.match(/youtube\.com\/embed\/([A-Za-z0-9_-]+)/);
   if (youtube) return `https://www.youtube.com/watch?v=${youtube[1]}`;
   const vimeo = url.match(/player\.vimeo\.com\/video\/(\d+)/);
   if (vimeo) return `https://vimeo.com/${vimeo[1]}`;
-  if (isVideoFile(url)) return apodPageUrl(date);
-  return url;
+  return apodPageUrl(current);
 }
 
 /**

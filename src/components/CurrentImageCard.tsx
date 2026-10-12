@@ -10,9 +10,9 @@ const EXPLANATION =
   "max-h-[130px] cursor-text overflow-y-auto text-[13px] text-text select-text";
 
 /**
- * Which still ended up on the desktop. A video the API has a thumbnail for
- * uses that; one published as a plain file has a frame taken out of it, and
- * `source_url` is the video itself rather than a picture.
+ * Which still ended up on the desktop. A still NASA published, or the YouTube
+ * or Vimeo thumbnail, is a picture; a video published as a plain file has a
+ * frame taken out of it, and `source_url` is the video itself.
  */
 function stillSource(current: Applied): string {
   return isVideoFile(current.source_url) ? "a frame from it" : "its thumbnail";
@@ -48,9 +48,7 @@ export function CurrentImageCard({
       <h1 className={TITLE}>{current.title}</h1>
       <p className={META}>
         <span>{current.date}</span>
-        <span className="italic">
-          {current.copyright ? `(c) ${current.copyright}` : "NASA (public domain)"}
-        </span>
+        {current.credit && <span className="italic">Credit: {current.credit}</span>}
       </p>
 
       {current.media_type === "video" && (
@@ -62,10 +60,7 @@ export function CurrentImageCard({
           <button
             className={`${linkButton} font-semibold`}
             type="button"
-            onClick={() => {
-              if (current.video_url)
-                void openUrl(watchableVideoUrl(current.video_url, current.date));
-            }}
+            onClick={() => void openUrl(watchableVideoUrl(current))}
           >
             Watch the video
           </button>
@@ -77,7 +72,7 @@ export function CurrentImageCard({
       <button
         className={linkButton}
         type="button"
-        onClick={() => void openUrl(apodPageUrl(current.date))}
+        onClick={() => void openUrl(apodPageUrl(current))}
       >
         <ExternalLinkIcon />
         Open the APOD page

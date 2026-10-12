@@ -31,7 +31,7 @@ serde_json = "1"
 reqwest = { version = "0.13.4", features = ["json", "query"] }
 # `macros` is `select!`, which the scheduler races its sleep with.
 tokio = { version = "1.53.1", features = ["sync", "time", "rt-multi-thread", "macros"] }
-image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp", "tiff"] }
 rand = "0.10.2"
 chrono = { version = "0.4.45", features = ["serde"] }
 tauri-plugin-single-instance = "2.4.3"

@@ -102,31 +102,6 @@ pub async fn set_fit_mode(app: AppHandle, fit: FitMode) -> Result<UiState, Strin
     Ok(current_ui(&app).await)
 }
 
-/// Saves the key and immediately puts it to use.
-///
-/// The whole point of typing a key is usually that DEMO_KEY's quota ran out,
-/// so saving it and then sitting on the failed state until the next backoff
-/// tick would answer the user's problem with a shrug. A failure here leaves
-/// the key saved -- it is what the user asked for -- and reports the error.
-#[tauri::command]
-pub async fn set_api_key(app: AppHandle, key: String) -> Result<UiState, String> {
-    let changed = {
-        let state = app.state::<SharedState>();
-        let mut d = state.0.lock().await;
-        let key = key.trim().to_string();
-        let changed = d.settings.api_key != key;
-        if changed {
-            d.settings.api_key = key;
-            d.settings.save(&d.settings_path)?;
-        }
-        changed
-    };
-    if changed {
-        updater::update(&app, true).await?;
-    }
-    Ok(current_ui(&app).await)
-}
-
 #[tauri::command]
 pub async fn refresh_now(app: AppHandle) -> Result<UiState, String> {
     updater::update(&app, true).await?;
